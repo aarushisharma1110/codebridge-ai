@@ -11,7 +11,7 @@ The project will include user accounts, user and admin roles, and a question imp
 | Backend | Node.js, Express.js |
 | Frontend | React, Vite (planned) |
 | Database | PostgreSQL 17.6, Docker Compose |
-| Authentication | bcrypt, JWT (planned) |
+| Authentication | bcrypt, JWT in an HttpOnly cookie |
 | AI | Google Gemini API (planned) |
 | API Testing | Postman |
 
@@ -22,6 +22,7 @@ codebridge-ai/
 ├── backend/              # Server and database files
 ├── frontend/             # Frontend (planned)
 ├── docs/
+│   ├── authentication.md # API, demo accounts, and test instructions
 │   └── database.md       # Docker and database setup guide
 ├── docker-compose.yml
 ├── .env.example
@@ -32,11 +33,13 @@ codebridge-ai/
 
 Follow the [Docker and database setup guide](docs/database.md) to set up your local database and run the backend.
 
+The [authentication guide](docs/authentication.md) covers the Milestone 1 endpoints,
+root environment settings, React integration, demo accounts, and tests.
+
 Frontend setup instructions will be added when the React app is ready.
 
 ## Planned Features
 
-- Register and log in with user or admin access.
 - View, create, edit, and delete questions.
 - Improve question wording with Google Gemini.
 - Track API usage and handle errors and usage limits.

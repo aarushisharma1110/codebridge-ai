@@ -46,7 +46,8 @@ DATABASE_URL=postgresql://codebridge:choose_a_local_password@localhost:5433/code
 
 Replace `choose_a_local_password` in both places with the same password. Use letters and numbers to avoid extra formatting in the connection address. Keep `POSTGRES_USER` and `POSTGRES_DB` as shown so Docker can check that the database is ready.
 
-You can leave `JWT_SECRET`, `GEMINI_API_KEY`, and `CLIENT_ORIGIN` as they are for this setup.
+Before starting the backend, generate a `JWT_SECRET` and set `CLIENT_ORIGIN` as
+described in the [authentication guide](authentication.md#configure-and-run).
 
 ## 3. Start PostgreSQL
 
