@@ -15,8 +15,13 @@ CREATE TABLE IF NOT EXISTS questions (
     title VARCHAR(255) NOT NULL,
     body TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP,
+    last_edited_by INT REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Adds the column to databases created before it existed. Safe to run again.
+ALTER TABLE questions
+    ADD COLUMN IF NOT EXISTS last_edited_by INT REFERENCES users(id) ON DELETE SET NULL;
 
  CREATE TABLE IF NOT EXISTS api_usage (
      id SERIAL PRIMARY KEY,

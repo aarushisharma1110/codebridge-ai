@@ -3,9 +3,9 @@ module.exports = {
     questions: {
         notFound: 'Question not found',
         notOwner: 'You can only change your own questions',
-        invalidUpdate: (maxTitle, maxBody) =>
-            `Provide a title (1-${maxTitle} characters), a body (1-${maxBody} characters), or both`,
-        invalidInput: (maxTitle, maxBody) =>
-            `Title (1-${maxTitle} characters) and body (1-${maxBody} characters) are required`
+        invalidInput: ({ minTitle, maxTitle, maxBody }) =>
+            `Title must be ${minTitle}-${maxTitle} characters and body at most ${maxBody} characters`,
+        invalidUpdate: ({ minTitle, maxTitle, maxBody }) =>
+            `Provide a title of ${minTitle}-${maxTitle} characters, a body of at most ${maxBody} characters, or both`
     }
 };
