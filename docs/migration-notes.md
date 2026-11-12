@@ -12,6 +12,7 @@ There are two kinds of difference:
 | # | Area | Q2A behaviour | CodeBridge behaviour | Reason |
 |---|---|---|---|---|
 | 1 | Listing questions (`GET /api/v1/questions`) | Anonymous visitors can read the question list by default. | Login is required; a request without a valid session gets 401. | The course requires API usage to be tracked per authenticated user, and `api_usage.user_id` cannot be null. Anonymous calls could not be counted or shown in the admin statistics. |
+| 2 | Editing and deleting a question (`PATCH` and `DELETE /api/v1/questions/:id`) | Administrators can edit or delete any user's question (to be confirmed against the pinned Q2A source). | Only the owner can edit or delete; anyone else, including an administrator, gets 403. | The feasibility study scopes editing and deleting to "an owned question" and gives administrators only the statistics routes. |
 
 ## Mismatches found and corrected
 
