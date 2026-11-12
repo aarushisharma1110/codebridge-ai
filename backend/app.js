@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 const { createSessionAuth } = require('./auth/session');
 const createAuthRouter = require('./routes/auth');
 const createAdminRouter = require('./routes/admin');
+const createQuestionsRouter = require('./routes/questions');
 
 function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
     if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32 || jwtSecret.startsWith('replace_with_')) {
@@ -29,12 +30,12 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
     app.use(cors({
         origin: (requestOrigin, callback) => callback(null, requestOrigin === clientOrigin),
         credentials: true,
-        methods: ['GET', 'POST'],
+        methods: ['GET', 'POST', 'PATCH', 'DELETE'],
         allowedHeaders: ['Content-Type']
     }));
     app.use(cookieParser());
 
-    app.use(['/api/v1/auth', '/api/v1/admin'], (req, res, next) => {
+    app.use(['/api/v1/auth', '/api/v1/admin', '/api/v1/questions'], (req, res, next) => {
         res.set('Cache-Control', 'no-store');
 
         // Browsers control Origin. Require it for every write, including login and logout.
@@ -47,6 +48,7 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
 
     app.use('/api/v1/auth', createAuthRouter(pool, session));
     app.use('/api/v1/admin', createAdminRouter(pool, session.requireAuth));
+    app.use('/api/v1/questions', createQuestionsRouter(pool, session.requireAuth));
 
     app.get('/api/v1/health', (req, res) => {
         res.json({ message: 'CodeBridge AI API is running' });
