@@ -1,5 +1,5 @@
 const express = require('express');
-const messages = require('../messages');
+const messages = require('lang/message/en/messages.js');
 
 // Limits from Q2A v1.8.8 defaults (see docs/q2a-analysis.md).
 const MIN_TITLE_LENGTH = 12;
