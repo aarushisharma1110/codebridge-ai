@@ -11,6 +11,7 @@ module.exports = {
         editHidden: 'A hidden question cannot be edited; reshow it first',
         deleteAdminOnly: 'Only an administrator can delete a question',
         deleteNotHidden: 'A question must be hidden before it can be deleted',
+        duplicate: 'Your submission appears to be a duplicate',
         invalidInput: ({ minTitle, maxTitle, maxBody }) =>
             `Title must be ${minTitle}-${maxTitle} characters and body at most ${maxBody} characters`,
         invalidUpdate: ({ minTitle, maxTitle, maxBody }) =>

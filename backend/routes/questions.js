@@ -15,6 +15,23 @@ const LIMITS = {
 
 const MAX_ID = 2147483647; // largest value of the SERIAL id column
 
+// Q2A refuses a new question whose title and body match one of the 5 newest visible questions
+// (pages/ask.php:148-164).
+const RECENT_FOR_DUPLICATES = 5;
+
+// Word separators from Q2A (util/string.php:816), plus hyphens and non-ASCII punctuation.
+const WORD_SEPARATORS = /[\s!"'()*+,./:;<=>?[\\\]^`{|}~-]+|(?![\x00-\x7F])[\p{P}\p{S}]+/u;
+
+// Returns the text as lowercase words joined by single spaces, like Q2A's qa_string_to_words.
+function toWords(text) {
+    return text
+        .toLowerCase()
+        .replace(/(\S)'(\S)/g, '$1$2')
+        .split(WORD_SEPARATORS)
+        .filter(Boolean)
+        .join(' ');
+}
+
 // Returns the trimmed text, or null if it is not text or its length is out of range.
 function cleanText(value, minLength, maxLength) {
     if (typeof value !== 'string') return null;
@@ -85,6 +102,20 @@ function createQuestionsRouter(pool, requireAuth) {
         if (title === null || body === null) {
             return res.status(400).json({ message: messages.questions.invalidInput(LIMITS) });
         }
+
+        const recent = await pool.query(
+            `SELECT title, body FROM questions
+             WHERE hidden = FALSE
+             ORDER BY created_at DESC, id DESC
+             LIMIT $1`,
+            [RECENT_FOR_DUPLICATES]
+        );
+        const titleWords = toWords(title);
+        const bodyWords = toWords(body);
+        const duplicate = recent.rows.some(
+            (question) => toWords(question.title) === titleWords && toWords(question.body) === bodyWords
+        );
+        if (duplicate) return res.status(409).json({ message: messages.questions.duplicate });
 
         const { rows } = await pool.query(
             `INSERT INTO questions (user_id, title, body)
