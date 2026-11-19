@@ -42,6 +42,7 @@ The values are Q2A's defaults for a fresh install. A site administrator can chan
 | Length unit | Characters, not bytes (`mb_strlen` with UTF-8) | `util/string.php:752` |
 | Editing some fields | A field that is not submitted is not validated | `plugins/qa-filter-basic.php:158-159` |
 | 4-byte characters | Characters outside the Basic Multilingual Plane, such as emoji, are removed from the title and body | `app/format.php:2204`, `2226` |
+| Duplicates | A new question is refused if its title and body have the same words (lowercase, punctuation removed) as one of the 5 newest visible questions from any user. Editing is not checked. | `pages/ask.php:148-164`, `util/string.php:431`, `816` |
 
 ## Permission rules
 
@@ -52,11 +53,13 @@ Q2A has seven user levels: Basic, Approved, Expert, Editor, Moderator, Admin and
 | View a question | Anyone, including anonymous visitors (`permit_view_q_page` = all) | `app/options.php:343` |
 | Edit a question | The owner, or any user at Editor level or above. Not possible while the question is hidden or closed. | `pages/question-view.php:156-158`, `app/options.php:336` |
 | Hide a question | The owner, or any user at Editor level or above. The row stays in the database but is no longer shown publicly. | `pages/question-view.php:134`, `192-193`, `app/options.php:339` |
+| Reshow a hidden question | Editor level or above; the owner only if nobody else acted on the question last | `pages/question-view.php:142`, `183`, `197` |
+| View a hidden question | The owner, or Editor level or above. It is left out of every question list, including the owner's; administrators see it under Admin > Hidden. | `pages/question-view.php:143`, `db/selects.php:347`, `pages/admin/admin-hidden.php:37-46` |
 | Delete a question | Moderator level or above only, and only if the question is already hidden and has no answers or comments | `pages/question-view.php:200`, `225`; `app/options.php:333`; `app/post-update.php:582` |
 
 An ordinary owner can never permanently delete their own question in Q2A; they can only hide it.
 
-Whether anonymous visitors may ask a question depends on the `ask_needs_login` option (`app/options.php:468-469`). Its default was not verified in this analysis.
+On a fresh install, `permit_post_q` is stored as 150 (anyone), so anonymous visitors may ask questions by default.
 
 ## What an edit saves
 
@@ -101,17 +104,29 @@ The first version of the question routes was written before this analysis, using
 
 Corrections and the differences that are kept on purpose are recorded in [migration-notes.md](migration-notes.md).
 
-## Planned comparison checks
+## Comparison checks and results
 
-Each check is run with the same input on Q2A v1.8.8 and on the Node.js API, as a logged-in user in both. The outcome compared is whether the request is accepted or rejected and what is stored, not the HTML or JSON response.
+Each check was run with the same input on Q2A v1.8.8 and on the Node.js API, as a logged-in regular user in both. The outcome compared is whether the request is accepted or rejected and what is stored, not the HTML or JSON response. Q2A was used through its web pages and its `qa_posts` table was read afterwards; the Node.js API was called directly and its `questions` table was read afterwards.
 
-| # | Input | Expected in both |
-|---|---|---|
-| 1 | Create a question with an 11-character title | Rejected |
-| 2 | Create questions with titles of 12, 120 and 121 characters | Accepted, accepted, rejected |
-| 3 | Create a question with a valid title and an empty body | Accepted |
-| 4 | Create a question with spaces around the title | Saved with the spaces removed, owned by that user |
-| 5 | A different regular user tries to edit the question | Refused |
-| 6 | The owner changes only the title | Title changed, body unchanged, update time set |
+| Item | Value |
+|---|---|
+| Date | 2026-11-18 |
+| Q2A | v1.8.8, default settings, PHP 8.3.36 and MariaDB 10.11.16 (XAMPP 8.3.36) |
+| Node.js API | Branch `Esin-question_hide_delete`, commit `b4dc5b4` |
+| Accounts | Q2A: `john` and `jane` (Basic level), `admin` (Super Admin). Node.js: `john@john.com` and `jane@jane.com` (`user`), `admin@admin.com` (`admin`) |
 
-Viewing without login and the delete process are not part of the verified selection. They are reported as deliberate differences.
+| # | Input | Q2A v1.8.8 | Node.js API | Match |
+|---|---|---|---|---|
+| 1 | Create a question with an 11-character title | Rejected: "Please provide more information - at least 12 characters" | Rejected, 400 | Yes |
+| 2 | Create questions with titles of 12, 120 and 121 characters | Accepted, accepted, rejected ("Maximum length is 120 characters") | 201, 201, 400 | Yes |
+| 3 | Create a question with a valid title and an empty body | Accepted, body stored empty | Accepted, body stored empty | Yes |
+| 4 | Create a question with three spaces before and after the title | Stored as `Spaces around this title`, owner john | Stored as `Spaces around this title`, owner john | Yes |
+| 5 | Jane tries to edit John's question | No edit button | Refused, 403 | Yes |
+| 6 | John changes only the title | Title changed, body unchanged, `updated` and `lastuserid` set | Title changed, body unchanged, `updated_at` and `last_edited_by` set | Yes |
+| 7 | Create the same title and empty body as a recent visible question, then again after 5 other questions | Refused as a duplicate, then accepted | 409, then 201 | Yes |
+| 8 | John hides his question | Removed from every list, including his own; Jane sees "This question has been hidden by its author"; John and admin can open it | Left out of `GET /`; Jane gets 403; John and admin get 200; listed in admin-only `GET /hidden` | Yes |
+| 9 | Edit a hidden question as owner or admin | No edit button for either | 409 for both | Yes |
+| 10 | Delete: owner, then admin on a visible question, then admin on a hidden question | No delete button, no delete button, delete removes the row | 403, 409, 204 with the row removed | Yes |
+| 11 | Reshow by the owner: after hiding it himself, then after an admin hid it | Reshow button shown, then not shown | 200, then 403 | Yes |
+
+Check 7 found a mismatch in the first run (the Node.js API accepted duplicates); it was corrected before the results above. Viewing without login remains a deliberate difference; see [migration-notes.md](migration-notes.md).
