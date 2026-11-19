@@ -1,18 +1,12 @@
 const express = require('express');
-const messages = require('lang/message/en/messages.js');
+const { format } = require('node:util');
+const { api } = require('../../lang/message/en/messages.json');
 
 // Limits from Q2A v1.8.8 defaults (see docs/q2a-analysis.md).
 const MIN_TITLE_LENGTH = 12;
 const MAX_TITLE_LENGTH = 120;
 const MIN_BODY_LENGTH = 0;
 const MAX_BODY_LENGTH = 12000;
-const LIMITS = {
-    minTitle: MIN_TITLE_LENGTH,
-    maxTitle: MAX_TITLE_LENGTH,
-    minBody: MIN_BODY_LENGTH,
-    maxBody: MAX_BODY_LENGTH
-};
-
 const MAX_ID = 2147483647; // largest value of the SERIAL id column
 
 // Returns the trimmed text, or null if it is not text or its length is out of range.
@@ -46,7 +40,7 @@ function createQuestionsRouter(pool, requireAuth) {
 
     router.get('/:id', requireAuth, async (req, res) => {
         const id = parseId(req.params.id);
-        if (!id) return res.status(404).json({ message: messages.questions.notFound });
+        if (!id) return res.status(404).json({ message: api.questionNotFound });
 
         const { rows } = await pool.query(
             `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by
@@ -54,7 +48,7 @@ function createQuestionsRouter(pool, requireAuth) {
              WHERE id = $1`,
             [id]
         );
-        if (!rows[0]) return res.status(404).json({ message: messages.questions.notFound });
+        if (!rows[0]) return res.status(404).json({ message: api.questionNotFound });
         res.json({ question: rows[0] });
     });
 
@@ -63,7 +57,9 @@ function createQuestionsRouter(pool, requireAuth) {
         const title = cleanTitle(input.title);
         const body = cleanBody(input.body === undefined ? '' : input.body);
         if (title === null || body === null) {
-            return res.status(400).json({ message: messages.questions.invalidInput(LIMITS) });
+            return res.status(400).json({
+                message: format(api.questionInvalidInput, MIN_TITLE_LENGTH, MAX_TITLE_LENGTH, MAX_BODY_LENGTH)
+            });
         }
 
         const { rows } = await pool.query(
@@ -77,7 +73,7 @@ function createQuestionsRouter(pool, requireAuth) {
 
     router.patch('/:id', requireAuth, async (req, res) => {
         const id = parseId(req.params.id);
-        if (!id) return res.status(404).json({ message: messages.questions.notFound });
+        if (!id) return res.status(404).json({ message: api.questionNotFound });
 
         // A field that is not sent is left unchanged (null means "keep the current value").
         const input = req.body || {};
@@ -88,15 +84,17 @@ function createQuestionsRouter(pool, requireAuth) {
         const nothingToChange = !titleSent && !bodySent;
         const invalidField = (titleSent && title === null) || (bodySent && body === null);
         if (nothingToChange || invalidField) {
-            return res.status(400).json({ message: messages.questions.invalidUpdate(LIMITS) });
+            return res.status(400).json({
+                message: format(api.questionInvalidUpdate, MIN_TITLE_LENGTH, MAX_TITLE_LENGTH, MAX_BODY_LENGTH)
+            });
         }
 
         const existing = await pool.query('SELECT user_id FROM questions WHERE id = $1', [id]);
-        if (!existing.rows[0]) return res.status(404).json({ message: messages.questions.notFound });
+        if (!existing.rows[0]) return res.status(404).json({ message: api.questionNotFound });
         const isOwner = existing.rows[0].user_id === req.user.id;
         const isAdmin = req.user.role === 'admin';
         if (!isOwner && !isAdmin) {
-            return res.status(403).json({ message: messages.questions.notOwner });
+            return res.status(403).json({ message: api.questionNotOwner });
         }
 
         const { rows } = await pool.query(
@@ -109,18 +107,18 @@ function createQuestionsRouter(pool, requireAuth) {
              RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by`,
             [title, body, id, req.user.id]
         );
-        if (!rows[0]) return res.status(404).json({ message: messages.questions.notFound });
+        if (!rows[0]) return res.status(404).json({ message: api.questionNotFound });
         res.json({ question: rows[0] });
     });
 
     router.delete('/:id', requireAuth, async (req, res) => {
         const id = parseId(req.params.id);
-        if (!id) return res.status(404).json({ message: messages.questions.notFound });
+        if (!id) return res.status(404).json({ message: api.questionNotFound });
 
         const existing = await pool.query('SELECT user_id FROM questions WHERE id = $1', [id]);
-        if (!existing.rows[0]) return res.status(404).json({ message: messages.questions.notFound });
+        if (!existing.rows[0]) return res.status(404).json({ message: api.questionNotFound });
         if (existing.rows[0].user_id !== req.user.id) {
-            return res.status(403).json({ message: messages.questions.notOwner });
+            return res.status(403).json({ message: api.questionNotOwner });
         }
 
         await pool.query('DELETE FROM questions WHERE id = $1 AND user_id = $2', [id, req.user.id]);

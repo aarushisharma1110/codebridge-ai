@@ -8,6 +8,7 @@ import { questions } from '../services/api'
 import { Improvement, ImproveButton } from '../components/Improvement'
 import { emptyQuestion, QuestionFields } from '../components/QuestionFields'
 import { Notice, PageHeading, Resource } from '../components/ui'
+import messages from '../../../lang/message/en/messages.json'
 
 export function AssistantPage() {
   const { user } = useAuth()
@@ -27,14 +28,14 @@ export function AssistantPage() {
   }
 
   return <div className="narrow">
-    <PageHeading title="AI Assistant" description="Refine the wording of a question and review the suggestion before saving." />
+    <PageHeading title={messages.layout.assistant} description={messages.assistant.description} />
     <div className="panel padded form-stack">
       <div className="assistant-intro">
         <span className="feature-icon teal"><Sparkles size={22} aria-hidden="true" /></span>
-        <h2>Refine a question</h2>
+        <h2>{messages.assistant.refine}</h2>
       </div>
-      <Resource state={available} label="existing questions">{(items) => items.length > 0 &&
-        <label className="field" htmlFor="select-question">Start from an existing question
+      <Resource state={available} label={messages.assistant.existingResource}>{(items) => items.length > 0 &&
+        <label className="field" htmlFor="select-question">{messages.assistant.startFromExisting}
           <select id="select-question" value={selection} disabled={disabled} onChange={(event) => {
             const id = event.target.value
             const question = items.find((item) => String(item.id) === id)
@@ -45,7 +46,7 @@ export function AssistantPage() {
               draft: question ? { title: question.title, body: question.body } : emptyQuestion,
             })
           }}>
-            <option value="">Write a new question</option>
+            <option value="">{messages.assistant.writeNew}</option>
             {items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
           </select>
         </label>
@@ -58,11 +59,11 @@ export function AssistantPage() {
         flow.reset()
         requestAnimationFrame(() => document.getElementById('question-title')?.focus())
       }} />
-      {accepted && !disabled && !flow.result && <Notice kind="success">Suggestion applied. Continue to the editor to review and save it.</Notice>}
+      {accepted && !disabled && !flow.result && <Notice kind="success">{messages.assistant.suggestionApplied}</Notice>}
       <div className="actions">
         <ImproveButton busy={flow.busy} disabled={disabled} onClick={flow.improve} />
         {accepted && !disabled && <Link className="button primary" id="continue-to-editor" to={editor} state={{ draft }}>
-          Continue to editor <ArrowRight size={17} aria-hidden="true" />
+          {messages.assistant.continue} <ArrowRight size={17} aria-hidden="true" />
         </Link>}
       </div>
     </div>

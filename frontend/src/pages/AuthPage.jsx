@@ -5,6 +5,7 @@ import { Brand } from '../components/Layout'
 import { Notice } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { auth } from '../services/api'
+import messages from '../../../lang/message/en/messages.json'
 
 const localPattern = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/i
 const domainPattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
@@ -12,16 +13,16 @@ const domainPattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a
 function validate(email, password, confirmation, registering) {
   const [local, domain, extra] = email.split('@')
   const errors = {}
-  if (!email) errors.email = 'Enter your email address.'
+  if (!email) errors.email = messages.auth.emailRequired
   else if (email.length > 254 || local.length > 64 || extra !== undefined ||
       !localPattern.test(local) || !domain || !domainPattern.test(domain)) {
-    errors.email = 'Enter a valid email address.'
+    errors.email = messages.auth.invalidEmail
   }
-  if (!password) errors.password = 'Enter your password.'
-  else if (registering && [...password].length < 8) errors.password = 'Use at least 8 characters.'
-  else if (new TextEncoder().encode(password).length > 72) errors.password = 'Use at most 72 UTF-8 bytes.'
+  if (!password) errors.password = messages.auth.passwordRequired
+  else if (registering && [...password].length < 8) errors.password = messages.auth.passwordTooShort
+  else if (new TextEncoder().encode(password).length > 72) errors.password = messages.auth.passwordTooLong
   if (registering && (!confirmation || password !== confirmation)) {
-    errors.confirmation = confirmation ? 'Passwords must match.' : 'Confirm your password.'
+    errors.confirmation = confirmation ? messages.auth.passwordMismatch : messages.auth.confirmationRequired
   }
   return errors
 }
@@ -65,42 +66,42 @@ export function AuthPage({ registering = false }) {
     }
   }
 
-  const contextual = location.state?.registered ? 'Account created. Log in to get started.'
-    : signedOut && !registering ? 'You’ve been logged out.'
-      : expired && !registering ? 'Your session ended. Log in to continue.' : ''
+  const contextual = location.state?.registered ? messages.auth.registered
+    : signedOut && !registering ? messages.auth.signedOut
+      : expired && !registering ? messages.auth.sessionEnded : ''
 
   return <div className="auth-shell">
     <header className="auth-header"><Brand /></header>
     <main className="auth-main" tabIndex={-1}>
       <div className="panel auth-card">
-        <div className="eyebrow">Your question workspace</div>
-        <h1>{registering ? 'Create an account' : 'Welcome back'}</h1>
-        <p className="auth-description">{registering ? 'Start writing and organizing your questions.' : 'Log in to manage and improve your questions.'}</p>
+        <div className="eyebrow">{messages.auth.workspace}</div>
+        <h1>{registering ? messages.auth.createAnAccount : messages.auth.welcome}</h1>
+        <p className="auth-description">{registering ? messages.auth.registerDescription : messages.auth.loginDescription}</p>
         {error ? <Notice kind="error">{error}</Notice> : contextual && <Notice>{contextual}</Notice>}
         <form className="form-stack" noValidate onSubmit={submit}>
           <div className="field">
-            <label htmlFor="email">Email address</label>
+            <label htmlFor="email">{messages.auth.emailAddress}</label>
             <input id="email" name="email" type="email" autoComplete="email" required value={email}
               disabled={busy} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : undefined}
-              onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+              onChange={(event) => setEmail(event.target.value)} placeholder={messages.auth.emailPlaceholder} />
             {errors.email && <span id="email-error" className="field-error">{errors.email}</span>}
           </div>
           <div className="field">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">{messages.auth.password}</label>
             <div className="password-control">
               <input id="password" name="password" type={visible ? 'text' : 'password'} required value={password}
                 autoComplete={registering ? 'new-password' : 'current-password'} disabled={busy}
                 aria-invalid={Boolean(errors.password)} aria-describedby="password-help"
                 onChange={(event) => setPassword(event.target.value)} />
-              <button type="button" className="icon-button" aria-label={visible ? 'Hide password' : 'Show password'}
+              <button type="button" className="icon-button" aria-label={visible ? messages.auth.hidePassword : messages.auth.showPassword}
                 onClick={() => setVisible(!visible)}>{visible ? <EyeOff size={19} /> : <Eye size={19} />}</button>
             </div>
             <span id="password-help" className={errors.password ? 'field-error' : 'hint'}>
-              {errors.password || (registering ? 'At least 8 characters, up to 72 UTF-8 bytes.' : '')}
+              {errors.password || (registering ? messages.auth.passwordHint : '')}
             </span>
           </div>
           {registering && <div className="field">
-            <label htmlFor="confirmation">Confirm password</label>
+            <label htmlFor="confirmation">{messages.auth.confirmPassword}</label>
             <input id="confirmation" name="confirmation" type={visible ? 'text' : 'password'} required value={confirmation}
               autoComplete="new-password" disabled={busy} aria-invalid={Boolean(errors.confirmation)}
               aria-describedby={errors.confirmation ? 'confirmation-error' : undefined}
@@ -108,12 +109,12 @@ export function AuthPage({ registering = false }) {
             {errors.confirmation && <span className="field-error" id="confirmation-error">{errors.confirmation}</span>}
           </div>}
           <button className="button primary" disabled={busy}>
-            {busy ? (registering ? 'Creating account…' : 'Logging in…') : (registering ? 'Create account' : 'Log in')}
+            {busy ? (registering ? messages.auth.creatingAccount : messages.auth.loggingIn) : (registering ? messages.auth.createAccount : messages.auth.logIn)}
             <ArrowRight size={17} aria-hidden="true" />
           </button>
         </form>
-        <p className="auth-switch">{registering ? 'Already have an account?' : 'New to CodeBridge?'}{' '}
-          <Link to={registering ? '/login' : '/register'}>{registering ? 'Log in' : 'Create an account'}</Link>
+        <p className="auth-switch">{registering ? messages.auth.existingAccount : messages.auth.newAccount}{' '}
+          <Link to={registering ? '/login' : '/register'}>{registering ? messages.auth.logIn : messages.auth.createAnAccount}</Link>
         </p>
       </div>
     </main>

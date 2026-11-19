@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const { BCRYPT_ROUNDS, normalizeEmail, validPassword } = require('../auth/credentials');
+const messages = require('../../lang/message/en/messages.json');
 
 // Match the bcrypt work for an unrecognized email to the work for a wrong password.
 const dummyHash = bcrypt.hashSync(require('node:crypto').randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
@@ -13,7 +14,7 @@ function createAuthRouter(pool, session) {
         const normalizedEmail = normalizeEmail(email);
         if (!normalizedEmail || !validPassword(password)) {
             return res.status(400).json({
-                message: 'Use a valid email and a password with at least 8 characters and at most 72 UTF-8 bytes'
+                message: messages.api.invalidRegistration
             });
         }
 
@@ -26,7 +27,7 @@ function createAuthRouter(pool, session) {
             [normalizedEmail, passwordHash]
         );
         if (!result.rows[0]) {
-            return res.status(409).json({ message: 'Email already registered' });
+            return res.status(409).json({ message: messages.api.emailRegistered });
         }
         res.status(201).json({ user: result.rows[0] });
     });
@@ -34,7 +35,7 @@ function createAuthRouter(pool, session) {
     router.post('/login', async (req, res) => {
         const { email, password } = req.body || {};
         const normalizedEmail = normalizeEmail(email);
-        const invalidCredentials = { message: 'Invalid email or password' };
+        const invalidCredentials = { message: messages.api.invalidCredentials };
         if (!normalizedEmail || !validPassword(password, 1)) {
             return res.status(401).json(invalidCredentials);
         }

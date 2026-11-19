@@ -7,6 +7,7 @@ import { AuthPage } from './pages/AuthPage'
 import { QuestionsPage, QuestionRoute } from './pages/Questions'
 import { AssistantPage } from './pages/Assistant'
 import { AdminPage, UsagePage } from './pages/Analytics'
+import messages from '../../lang/message/en/messages.json'
 
 function Gate({ guest = false }) {
   const { user, signedOut } = useAuth()
@@ -22,9 +23,9 @@ function Gate({ guest = false }) {
 
 function AdminGate() {
   return useAuth().user.role === 'admin' ? <Outlet /> :
-    <EmptyState title="Administrator access required"
-      action={<Link className="button secondary" to="/questions">Back to questions</Link>}>
-      This page is available to administrators.
+    <EmptyState title={messages.common.adminRequired}
+      action={<Link className="button secondary" to="/questions">{messages.common.backToQuestions}</Link>}>
+      {messages.app.adminOnly}
     </EmptyState>
 }
 
@@ -39,10 +40,10 @@ function AppRoutes() {
 
   if (pending || error) return <main className="session-shell" tabIndex={-1}>
     <Brand />
-    {pending ? <p className="loading" role="status"><span className="spinner" /> Checking your session…</p>
+    {pending ? <p className="loading" role="status"><span className="spinner" /> {messages.app.checkingSession}</p>
       : <Notice kind="error">
         <div>{error}</div>
-        <button className="button secondary small" onClick={retry}>Try again</button>
+        <button className="button secondary small" onClick={retry}>{messages.common.retry}</button>
       </Notice>}
   </main>
 
@@ -64,8 +65,8 @@ function AppRoutes() {
         <Route element={<AdminGate />}>
           <Route path="/admin" element={<AdminPage />} />
         </Route>
-        <Route path="*" element={<EmptyState title="Page not found"
-          action={<Link className="button secondary" to="/questions">Back to questions</Link>} />} />
+        <Route path="*" element={<EmptyState title={messages.app.notFound}
+          action={<Link className="button secondary" to="/questions">{messages.common.backToQuestions}</Link>} />} />
       </Route>
     </Route>
   </Routes>

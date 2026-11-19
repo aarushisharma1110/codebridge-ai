@@ -2,11 +2,10 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
     "test": "node --test",
     "start": "node server.js",
-    "test:postgres": "node test/auth.test.js --postgres",
+    "test:postgres": "node --test integration/questions.js",
     "seed:demo": "node scripts/seed-demo.js"
   },
   "keywords": [],

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import messages from '../../../lang/message/en/messages.json'
 
 export function useResource(load) {
   const [result, setResult] = useState(null)
@@ -11,7 +12,7 @@ export function useResource(load) {
       if (!controller.signal.aborted) setResult({ load, attempt, data })
     }).catch((failure) => {
       if (!controller.signal.aborted) {
-        const error = signal.aborted ? 'The request timed out. Please try again.' : failure.message
+        const error = signal.aborted ? messages.client.timeout : failure.message
         setResult({ load, attempt, error })
       }
     })

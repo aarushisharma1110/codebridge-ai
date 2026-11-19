@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { improveQuestion } from '../services/api'
-import { cleanQuestion, questionErrors } from '../components/QuestionFields'
+import { MAX_TITLE_LENGTH, MIN_TITLE_LENGTH } from '../components/QuestionFields'
+import messages from '../../../lang/message/en/messages.json'
 
 export function useImprovement(draft) {
   const [result, setResult] = useState(null)
@@ -10,20 +11,25 @@ export function useImprovement(draft) {
 
   async function improve() {
     if (inFlight.current) return
-    const checked = questionErrors(draft)
-    setErrors(checked)
-    if (Object.keys(checked).length) {
-      document.getElementById(checked.title ? 'question-title' : 'question-body')?.focus()
+    const original = draft.title.trim()
+    if (!original || original.length > 2000) {
+      setErrors({ title: original ? messages.improvement.inputTooLong : messages.questions.titleRequired })
+      document.getElementById('question-title')?.focus()
       return
     }
 
-    const original = cleanQuestion(draft)
+    setErrors({})
     inFlight.current = true
     setBusy(true)
     setResult(null)
     try {
-      const data = await improveQuestion(original)
-      setResult(data ? { original, suggestion: data.suggestion } : { unavailable: true })
+      const suggestion = await improveQuestion(original)
+      const fitsTitle = suggestion.length >= MIN_TITLE_LENGTH && suggestion.length <= MAX_TITLE_LENGTH &&
+        !/[\r\n]/.test(suggestion)
+      const revisedDraft = fitsTitle
+        ? { ...draft, title: suggestion }
+        : { ...draft, body: draft.body ? `${suggestion}\n\n${draft.body}` : suggestion }
+      setResult({ original, suggestion, fitsTitle, revisedDraft })
     } catch (failure) {
       setResult({ error: failure.message })
     } finally {

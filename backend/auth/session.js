@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const messages = require('../../lang/message/en/messages.json');
 
 const COOKIE_NAME = 'codebridge_session';
 const SESSION_SECONDS = 60 * 60;
@@ -23,7 +24,7 @@ function createSessionAuth({ pool, secret, secure }) {
 
     async function requireAuth(req, res, next) {
         const token = req.cookies[COOKIE_NAME];
-        if (!token) return res.status(401).json({ message: 'Authentication required' });
+        if (!token) return res.status(401).json({ message: messages.api.authenticationRequired });
 
         let userId;
         try {
@@ -31,17 +32,17 @@ function createSessionAuth({ pool, secret, secure }) {
             userId = Number(claims.sub);
             if (!Number.isInteger(userId) || userId < 1 || userId > 2147483647 ||
                 String(userId) !== claims.sub || !Number.isInteger(claims.exp)) {
-                return res.status(401).json({ message: 'Invalid or expired session' });
+                return res.status(401).json({ message: messages.api.invalidSession });
             }
         } catch {
-            return res.status(401).json({ message: 'Invalid or expired session' });
+            return res.status(401).json({ message: messages.api.invalidSession });
         }
 
         const result = await pool.query(
             'SELECT id, email, role, created_at FROM users WHERE id = $1',
             [userId]
         );
-        if (!result.rows[0]) return res.status(401).json({ message: 'Invalid or expired session' });
+        if (!result.rows[0]) return res.status(401).json({ message: messages.api.invalidSession });
 
         req.user = result.rows[0];
         next();
@@ -51,9 +52,9 @@ function createSessionAuth({ pool, secret, secure }) {
 }
 
 function requireAdmin(req, res, next) {
-    if (!req.user) return res.status(401).json({ message: 'Authentication required' });
+    if (!req.user) return res.status(401).json({ message: messages.api.authenticationRequired });
     if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Administrator access required' });
+        return res.status(403).json({ message: messages.common.adminRequired });
     }
     next();
 }

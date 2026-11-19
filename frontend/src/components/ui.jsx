@@ -1,11 +1,13 @@
 import { ExternalLink } from 'lucide-react'
+import messages from '../../../lang/message/en/messages.json'
+import { formatMessage } from '../formatMessage'
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 export function DateValue({ value }) {
   const date = value && new Date(value)
   return date && Number.isFinite(date.getTime())
     ? <time dateTime={date.toISOString()}>{dateFormat.format(date)}</time>
-    : 'Unavailable'
+    : messages.common.unavailable
 }
 
 export function PageHeading({ title, description, action, eyebrow }) {
@@ -34,11 +36,11 @@ export function EmptyState({ icon: Icon = ExternalLink, title, children, action 
 
 export function Resource({ state, label, children }) {
   if (state.loading) return <div className="loading" role="status">
-    <span className="spinner" aria-hidden="true" /> Loading {label}…
+    <span className="spinner" aria-hidden="true" /> {formatMessage(messages.common.loading, { label })}
   </div>
   if (state.error) return <Notice kind="error">
     <div>{state.error}</div>
-    <button className="button secondary small" onClick={state.retry}>Try again</button>
+    <button className="button secondary small" onClick={state.retry}>{messages.common.retry}</button>
   </Notice>
   return children(state.data)
 }

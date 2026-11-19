@@ -84,7 +84,7 @@ Follow [the database guide](database.md) for the existing Compose setup. Edit th
 | `CLIENT_ORIGIN` | Exact frontend origin, including scheme and port when applicable, with no trailing slash. Local example `http://localhost:5173`. |
 | `PORT` | API port, defaults to `3000` |
 | `NODE_ENV` | Set to `production` for an HTTPS deployment. This enables `Secure` cookies and blocks the demo seed command. |
-| `TEST_DATABASE_URL` | Optional PostgreSQL URL for integration tests. Defaults to `DATABASE_URL`. |
+| `TEST_DATABASE_URL` | Optional PostgreSQL URL for integration tests. Defaults to `DATABASE_URL`. The role needs permission to create a schema in that database. |
 
 ```sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -98,7 +98,7 @@ npm --prefix backend ci
 npm --prefix backend start
 ```
 
-In production, serve the frontend and API over HTTPS on the same site, for example `app.example.com` and `api.example.com`. Set `CLIENT_ORIGIN` to the deployed frontend's exact HTTPS origin and set the frontend's API base URL to the deployed API. Supply the database credentials and JWT secret through the deployment's secret configuration. Add rate limiting to registration and login before exposing the API publicly.
+See the [deployment guide](frontend.md#deployment) for HTTPS origins, cookie compatibility, and backend environment settings.
 
 ## Seed the course demo accounts
 
@@ -117,4 +117,8 @@ npm --prefix backend test
 npm --prefix backend run test:postgres
 ```
 
-The first command uses an in-memory database substitute and real HTTP requests to a temporary loopback server. The second uses real PostgreSQL and also tests demo seeding. Start PostgreSQL first and use a connection with permission to create a schema. The tests create a randomly named schema, load the existing SQL schema into it, and remove only that temporary schema at teardown. Existing development tables and records are outside the test schema.
+`npm --prefix backend test` runs the mock-backed tests without PostgreSQL. For the integration suite, start PostgreSQL with `docker compose up -d --wait postgres` and configure the root `.env` as described in the [database guide](database.md). Set `TEST_DATABASE_URL` to target a separate test database if desired. Keep connection URLs in the environment or the ignored root `.env`.
+
+The PostgreSQL suite runs the existing Express app on a temporary loopback port, registers test accounts, logs in, and uses the issued session cookies to exercise question CRUD. It checks request validation, owner and admin permissions, origin checks, and the effect of successful and rejected requests on stored rows.
+
+Each run creates a uniquely named schema, limits the application connection pool's search path to that schema, and loads `backend/db/schema.sql` there. Teardown closes the listener and pool before dropping the schema created by that run. The suite requires neither a separately running Express server nor Qwen.

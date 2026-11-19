@@ -5,8 +5,10 @@ const { createSessionAuth } = require('./auth/session');
 const createAuthRouter = require('./routes/auth');
 const createAdminRouter = require('./routes/admin');
 const createQuestionsRouter = require('./routes/questions');
+const createAiRouter = require('./routes/ai');
+const messages = require('../lang/message/en/messages.json');
 
-function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
+function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false, ai }) {
     if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32 || jwtSecret.startsWith('replace_with_')) {
         throw new Error('Set JWT_SECRET to a random secret of at least 32 bytes');
     }
@@ -35,12 +37,12 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
     }));
     app.use(cookieParser());
 
-    app.use(['/api/v1/auth', '/api/v1/admin', '/api/v1/questions'], (req, res, next) => {
+    app.use(['/api/v1/auth', '/api/v1/admin', '/api/v1/questions', '/api/v1/ai'], (req, res, next) => {
         res.set('Cache-Control', 'no-store');
 
         // Browsers control Origin. Require it for every write, including login and logout.
         if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('Origin') !== clientOrigin) {
-            return res.status(403).json({ message: 'Request origin is not allowed' });
+            return res.status(403).json({ message: messages.api.originDenied });
         }
         next();
     });
@@ -49,21 +51,22 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
     app.use('/api/v1/auth', createAuthRouter(pool, session));
     app.use('/api/v1/admin', createAdminRouter(pool, session.requireAuth));
     app.use('/api/v1/questions', createQuestionsRouter(pool, session.requireAuth));
+    app.use('/api/v1/ai', createAiRouter(session.requireAuth, ai));
 
     app.get('/api/v1/health', (req, res) => {
-        res.json({ message: 'CodeBridge AI API is running' });
+        res.json({ message: messages.api.healthy });
     });
 
     app.get('/api/v1/db-test', async (req, res) => {
         try {
             const result = await pool.query('SELECT current_database()');
             res.json({
-                message: 'Database connected successfully',
+                message: messages.api.databaseConnected,
                 database: result.rows[0].current_database
             });
         } catch {
             console.error('Database connection check failed');
-            res.status(500).json({ message: 'Database connection failed' });
+            res.status(500).json({ message: messages.api.databaseFailed });
         }
     });
 
@@ -71,17 +74,17 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false }) {
         if (res.headersSent) return next(error);
 
         if (error.type === 'entity.too.large') {
-            return res.status(413).json({ message: 'Request body is too large' });
+            return res.status(413).json({ message: messages.api.bodyTooLarge });
         }
         if (error.type === 'entity.parse.failed') {
-            return res.status(400).json({ message: 'Invalid JSON body' });
+            return res.status(400).json({ message: messages.api.invalidJson });
         }
         if (['encoding.unsupported', 'charset.unsupported'].includes(error.type)) {
-            return res.status(415).json({ message: 'Unsupported request encoding' });
+            return res.status(415).json({ message: messages.api.unsupportedEncoding });
         }
 
         console.error('Request failed');
-        res.status(500).json({ message: 'Internal server error' });
+        res.status(500).json({ message: messages.api.internalError });
     });
 
     return app;

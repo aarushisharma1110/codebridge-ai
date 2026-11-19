@@ -1,3 +1,4 @@
+import messages from '../../../lang/message/en/messages.json'
 const defaultBase = import.meta.env.DEV ? 'http://localhost:3000/api/v1' : '/api/v1'
 const base = (import.meta.env.VITE_API_BASE_URL || defaultBase).replace(/\/+$/, '')
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0
@@ -33,8 +34,8 @@ async function request(path, { method = 'GET', body, signal, session = true } = 
   } catch (error) {
     if (signal?.aborted) throw error
     throw new ApiError(error.name === 'TimeoutError'
-      ? 'The request timed out. Please try again.'
-      : 'Could not reach CodeBridge. Check your connection and try again.')
+      ? messages.client.timeout
+      : messages.client.networkError)
   }
   if (response.status === 204) return undefined
 
@@ -44,7 +45,7 @@ async function request(path, { method = 'GET', body, signal, session = true } = 
   } catch (error) {
     if (signal?.aborted) throw error
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      throw new ApiError('The request timed out. Please try again.')
+      throw new ApiError(messages.client.timeout)
     }
   }
 
@@ -52,18 +53,18 @@ async function request(path, { method = 'GET', body, signal, session = true } = 
     if (response.status === 401 && session && version === sessionVersion) {
       window.dispatchEvent(new Event(SESSION_EXPIRED))
     }
-    const message = response.status === 429 ? 'Too many requests. Wait a moment and try again.'
-      : response.status >= 500 ? 'The service is temporarily unavailable. Please try again.'
-      : data?.message || 'The request could not be completed.'
+    const message = response.status === 429 ? messages.client.rateLimited
+      : response.status >= 500 ? messages.client.serviceUnavailable
+      : data?.message || messages.client.requestFailed
     throw new ApiError(message, response.status)
   }
-  if (!data || typeof data !== 'object') throw new ApiError('The server returned an unexpected response.')
+  if (!data || typeof data !== 'object') throw new ApiError(messages.client.unexpectedResponse)
   return data
 }
 
 async function readField(path, options, key, validate) {
   const result = (await request(path, options))?.[key]
-  if (!validate(result)) throw new ApiError('The server returned an unexpected response.')
+  if (!validate(result)) throw new ApiError(messages.client.unexpectedResponse)
   return result
 }
 
@@ -89,7 +90,7 @@ export const questions = {
 async function optional(path, options, validate) {
   try {
     const data = await request(path, options)
-    if (!data || !validate(data)) throw new ApiError('The server returned an unexpected response.')
+    if (!data || !validate(data)) throw new ApiError(messages.client.unexpectedResponse)
     return data
   } catch (error) {
     if ([404, 405, 501].includes(error.status)) return null
@@ -100,11 +101,18 @@ async function optional(path, options, validate) {
 const isUsageRow = (row) => row && typeof row.method === 'string' &&
   typeof row.endpoint === 'string' && isCount(row.count)
 
-export function improveQuestion(body) {
-  return optional('/ai/improve', { method: 'POST', body }, ({ suggestion }) =>
-    typeof suggestion?.title === 'string' && suggestion.title.trim().length >= 12 &&
-    suggestion.title.trim().length <= 120 && typeof suggestion.body === 'string' &&
-    suggestion.body.trim().length <= 12000)
+export async function improveQuestion(question) {
+  const signal = AbortSignal.timeout(130000) // Allow the backend to report its configured timeout first.
+  try {
+    const improved = await readField('/ai/improve-question', { method: 'POST', body: { question }, signal },
+      'improvedQuestion', (value) => typeof value === 'string' && Boolean(value.trim()) && value.trim().length <= 4000)
+    return improved.trim()
+  } catch (error) {
+    if (signal.aborted || error.status === 504) throw new ApiError(messages.ai.timeout, 504)
+    if (error.status === 503) throw new ApiError(messages.ai.unavailable, 503)
+    if (error.status === 502) throw new ApiError(messages.ai.invalidSuggestion, 502)
+    throw error
+  }
 }
 
 export function getUsage(signal) {
@@ -117,7 +125,7 @@ export const admin = {
   counts: async (signal) => {
     const data = await request('/admin/dashboard', { signal })
     if (!isCount(data?.users) || !isCount(data?.admins)) {
-      throw new ApiError('The server returned an unexpected response.')
+      throw new ApiError(messages.client.unexpectedResponse)
     }
     return data
   },

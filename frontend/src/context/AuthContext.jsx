@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { advanceSession, auth, SESSION_EXPIRED } from '../services/api'
+import messages from '../../../lang/message/en/messages.json'
 
 const AuthContext = createContext(null)
 
@@ -17,7 +18,7 @@ export function AuthProvider({ children }) {
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20000)])
     auth.me(signal).then(setUser).catch((failure) => {
       if (!controller.signal.aborted && failure.status !== 401) {
-        setError(signal.aborted ? 'Checking your session timed out.' : failure.message)
+        setError(signal.aborted ? messages.auth.sessionTimedOut : failure.message)
       }
     }).finally(() => {
       if (!controller.signal.aborted) setPending(false)
