@@ -16,12 +16,15 @@ CREATE TABLE IF NOT EXISTS questions (
     body TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP,
-    last_edited_by INT REFERENCES users(id) ON DELETE SET NULL
+    last_edited_by INT REFERENCES users(id) ON DELETE SET NULL,
+    hidden BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Adds the column to databases created before it existed. Safe to run again.
+-- Adds the columns to databases created before they existed. Safe to run again.
 ALTER TABLE questions
     ADD COLUMN IF NOT EXISTS last_edited_by INT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE questions
+    ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
 
  CREATE TABLE IF NOT EXISTS api_usage (
      id SERIAL PRIMARY KEY,

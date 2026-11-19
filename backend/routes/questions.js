@@ -36,9 +36,25 @@ function createQuestionsRouter(pool, requireAuth) {
     const router = express.Router();
 
     router.get('/', requireAuth, async (req, res) => {
+        // Like Q2A's question list, hidden questions are left out for everyone.
         const { rows } = await pool.query(
-            `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by
+            `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by, hidden
              FROM questions
+             WHERE hidden = FALSE
+             ORDER BY created_at DESC, id DESC`
+        );
+        res.json({ questions: rows });
+    });
+
+    // Hidden questions for admins, like Q2A's Admin > Hidden page.
+    router.get('/hidden', requireAuth, async (req, res) => {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ message: messages.questions.adminOnly });
+        }
+        const { rows } = await pool.query(
+            `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by, hidden
+             FROM questions
+             WHERE hidden = TRUE
              ORDER BY created_at DESC, id DESC`
         );
         res.json({ questions: rows });
@@ -49,13 +65,17 @@ function createQuestionsRouter(pool, requireAuth) {
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
         const { rows } = await pool.query(
-            `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by
+            `SELECT id, user_id, title, body, created_at, updated_at, last_edited_by, hidden
              FROM questions
              WHERE id = $1`,
             [id]
         );
-        if (!rows[0]) return res.status(404).json({ message: messages.questions.notFound });
-        res.json({ question: rows[0] });
+        const question = rows[0];
+        if (!question) return res.status(404).json({ message: messages.questions.notFound });
+        if (question.hidden && question.user_id !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ message: messages.questions.hidden });
+        }
+        res.json({ question });
     });
 
     router.post('/', requireAuth, async (req, res) => {
@@ -69,7 +89,7 @@ function createQuestionsRouter(pool, requireAuth) {
         const { rows } = await pool.query(
             `INSERT INTO questions (user_id, title, body)
              VALUES ($1, $2, $3)
-             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by`,
+             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by, hidden`,
             [req.user.id, title, body]
         );
         res.status(201).json({ question: rows[0] });
@@ -91,12 +111,16 @@ function createQuestionsRouter(pool, requireAuth) {
             return res.status(400).json({ message: messages.questions.invalidUpdate(LIMITS) });
         }
 
-        const existing = await pool.query('SELECT user_id FROM questions WHERE id = $1', [id]);
+        const existing = await pool.query('SELECT user_id, hidden FROM questions WHERE id = $1', [id]);
         if (!existing.rows[0]) return res.status(404).json({ message: messages.questions.notFound });
         const isOwner = existing.rows[0].user_id === req.user.id;
         const isAdmin = req.user.role === 'admin';
         if (!isOwner && !isAdmin) {
             return res.status(403).json({ message: messages.questions.notOwner });
+        }
+        // Q2A does not allow editing a hidden question, even by its owner or an admin.
+        if (existing.rows[0].hidden) {
+            return res.status(409).json({ message: messages.questions.editHidden });
         }
 
         const { rows } = await pool.query(
@@ -105,25 +129,89 @@ function createQuestionsRouter(pool, requireAuth) {
                  body = COALESCE($2, body),
                  updated_at = CURRENT_TIMESTAMP,
                  last_edited_by = $4
-             WHERE id = $3
-             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by`,
+             WHERE id = $3 AND hidden = FALSE
+             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by, hidden`,
             [title, body, id, req.user.id]
         );
         if (!rows[0]) return res.status(404).json({ message: messages.questions.notFound });
         res.json({ question: rows[0] });
     });
 
+    // Hiding keeps the question but takes it out of public view (Q2A: owner, or Editor and above).
+    router.post('/:id/hide', requireAuth, async (req, res) => {
+        const id = parseId(req.params.id);
+        if (!id) return res.status(404).json({ message: messages.questions.notFound });
+
+        const existing = await pool.query('SELECT user_id, hidden FROM questions WHERE id = $1', [id]);
+        const question = existing.rows[0];
+        if (!question) return res.status(404).json({ message: messages.questions.notFound });
+        if (question.user_id !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ message: messages.questions.notOwner });
+        }
+        if (question.hidden) return res.status(409).json({ message: messages.questions.alreadyHidden });
+
+        const { rows } = await pool.query(
+            `UPDATE questions
+             SET hidden = TRUE, updated_at = CURRENT_TIMESTAMP, last_edited_by = $2
+             WHERE id = $1 AND hidden = FALSE
+             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by, hidden`,
+            [id, req.user.id]
+        );
+        if (!rows[0]) return res.status(409).json({ message: messages.questions.alreadyHidden });
+        res.json({ question: rows[0] });
+    });
+
+    // An owner may reshow only if they were the last to act on it; an admin always may (Q2A rule).
+    router.post('/:id/reshow', requireAuth, async (req, res) => {
+        const id = parseId(req.params.id);
+        if (!id) return res.status(404).json({ message: messages.questions.notFound });
+
+        const existing = await pool.query(
+            'SELECT user_id, hidden, last_edited_by FROM questions WHERE id = $1',
+            [id]
+        );
+        const question = existing.rows[0];
+        if (!question) return res.status(404).json({ message: messages.questions.notFound });
+        const isOwner = question.user_id === req.user.id;
+        const isAdmin = req.user.role === 'admin';
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({ message: messages.questions.notOwner });
+        }
+        if (!question.hidden) return res.status(409).json({ message: messages.questions.notHidden });
+        const ownerActedLast = question.last_edited_by === null || question.last_edited_by === question.user_id;
+        if (!isAdmin && !ownerActedLast) {
+            return res.status(403).json({ message: messages.questions.hiddenByOther });
+        }
+
+        const { rows } = await pool.query(
+            `UPDATE questions
+             SET hidden = FALSE, updated_at = CURRENT_TIMESTAMP, last_edited_by = $2
+             WHERE id = $1 AND hidden = TRUE
+             RETURNING id, user_id, title, body, created_at, updated_at, last_edited_by, hidden`,
+            [id, req.user.id]
+        );
+        if (!rows[0]) return res.status(409).json({ message: messages.questions.notHidden });
+        res.json({ question: rows[0] });
+    });
+
+    // Q2A: only Moderator level and above may delete, and only a question that is already hidden.
     router.delete('/:id', requireAuth, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
-        const existing = await pool.query('SELECT user_id FROM questions WHERE id = $1', [id]);
+        const existing = await pool.query('SELECT hidden FROM questions WHERE id = $1', [id]);
         if (!existing.rows[0]) return res.status(404).json({ message: messages.questions.notFound });
-        if (existing.rows[0].user_id !== req.user.id) {
-            return res.status(403).json({ message: messages.questions.notOwner });
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ message: messages.questions.deleteAdminOnly });
+        }
+        if (!existing.rows[0].hidden) {
+            return res.status(409).json({ message: messages.questions.deleteNotHidden });
         }
 
-        await pool.query('DELETE FROM questions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        const result = await pool.query('DELETE FROM questions WHERE id = $1 AND hidden = TRUE', [id]);
+        if (result.rowCount === 0) {
+            return res.status(409).json({ message: messages.questions.deleteNotHidden });
+        }
         res.status(204).end();
     });
 
