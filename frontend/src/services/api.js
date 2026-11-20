@@ -5,7 +5,10 @@ const isCount = (value) => Number.isSafeInteger(value) && value >= 0
 const isUser = (user) => user && isCount(user.id) &&
   typeof user.email === 'string' && ['user', 'admin'].includes(user.role)
 const isQuestion = (question) => question && isCount(question.id) && isCount(question.user_id) &&
-  typeof question.title === 'string' && typeof question.body === 'string'
+  typeof question.title === 'string' && typeof question.body === 'string' &&
+  (question.hidden === undefined || typeof question.hidden === 'boolean')
+const isQuestionList = (items) => Array.isArray(items) && items.every(isQuestion)
+const isHiddenQuestion = (question) => isQuestion(question) && question.hidden === true
 let sessionVersion = 0
 export const SESSION_EXPIRED = 'codebridge:session-expired'
 
@@ -78,11 +81,15 @@ export const auth = {
 const questionPath = (id) => '/questions/' + encodeURIComponent(id)
 
 export const questions = {
-  list: (signal) => readField('/questions', { signal }, 'questions', (items) =>
-    Array.isArray(items) && items.every(isQuestion)),
+  list: (signal) => readField('/questions', { signal }, 'questions', isQuestionList),
+  listHidden: (signal) => readField('/questions/hidden', { signal }, 'questions', (items) =>
+    Array.isArray(items) && items.every(isHiddenQuestion)),
   get: (id, signal) => readField(questionPath(id), { signal }, 'question', isQuestion),
   create: (body) => readField('/questions', { method: 'POST', body }, 'question', isQuestion),
   update: (id, body) => readField(questionPath(id), { method: 'PATCH', body }, 'question', isQuestion),
+  hide: (id) => readField(`${questionPath(id)}/hide`, { method: 'POST' }, 'question', isHiddenQuestion),
+  reshow: (id) => readField(`${questionPath(id)}/reshow`, { method: 'POST' }, 'question', (question) =>
+    isQuestion(question) && question.hidden === false),
   remove: (id) => request(questionPath(id), { method: 'DELETE' }),
 }
 

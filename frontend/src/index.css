@@ -129,7 +129,7 @@ h3 { font-size: .95rem; }
 .notice { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; font-size: .9rem; border: 1px solid #d4e2ff; border-radius: 9px; padding: 12px 14px; background: #eef4ff; color: #234783; overflow-wrap: anywhere; }
 .notice.error { color: #922238; background: #fff3f4; border-color: #f1cbd1; }
 .notice.success { color: #105b4b; background: #ebf9f3; border-color: #bee9d9; }
-.workspace > .notice, .profile-details ~ .notice, dialog .notice { margin-bottom: 15px; }
+.workspace > .notice, article.narrow > .notice, .profile-details ~ .notice, dialog .notice { margin-bottom: 15px; }
 .question-list > .notice { margin: 16px; }
 
 .form-stack { display: grid; gap: 18px; min-width: 0; }
