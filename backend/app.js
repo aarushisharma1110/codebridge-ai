@@ -8,7 +8,10 @@ const createQuestionsRouter = require('./routes/questions');
 const createAiRouter = require('./routes/ai');
 const messages = require('../lang/message/en/messages.json');
 
-function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false, ai }) {
+function createApp({
+    pool, clientOrigin, jwtSecret, secureCookies = false, sessionCookieSameSite = 'lax',
+    enableDatabaseDiagnostic = true, ai
+}) {
     if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32 || jwtSecret.startsWith('replace_with_')) {
         throw new Error('Set JWT_SECRET to a random secret of at least 32 bytes');
     }
@@ -27,7 +30,9 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false, ai })
     }
 
     const app = express();
-    const session = createSessionAuth({ pool, secret: jwtSecret, secure: secureCookies });
+    const session = createSessionAuth({
+        pool, secret: jwtSecret, secure: secureCookies, sameSite: sessionCookieSameSite
+    });
 
     app.use(cors({
         origin: (requestOrigin, callback) => callback(null, requestOrigin === clientOrigin),
@@ -57,18 +62,20 @@ function createApp({ pool, clientOrigin, jwtSecret, secureCookies = false, ai })
         res.json({ message: messages.api.healthy });
     });
 
-    app.get('/api/v1/db-test', async (req, res) => {
-        try {
-            const result = await pool.query('SELECT current_database()');
-            res.json({
-                message: messages.api.databaseConnected,
-                database: result.rows[0].current_database
-            });
-        } catch {
-            console.error('Database connection check failed');
-            res.status(500).json({ message: messages.api.databaseFailed });
-        }
-    });
+    if (enableDatabaseDiagnostic) {
+        app.get('/api/v1/db-test', async (req, res) => {
+            try {
+                const result = await pool.query('SELECT current_database()');
+                res.json({
+                    message: messages.api.databaseConnected,
+                    database: result.rows[0].current_database
+                });
+            } catch {
+                console.error('Database connection check failed');
+                res.status(500).json({ message: messages.api.databaseFailed });
+            }
+        });
+    }
 
     app.use((error, req, res, next) => {
         if (res.headersSent) return next(error);

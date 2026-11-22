@@ -5,12 +5,15 @@ require('dotenv').config({
 
 const createApp = require('./app');
 const pool = require('./db');
+const production = process.env.NODE_ENV === 'production';
 
 const app = createApp({
     pool,
     clientOrigin: process.env.CLIENT_ORIGIN,
     jwtSecret: process.env.JWT_SECRET,
-    secureCookies: process.env.NODE_ENV === 'production',
+    secureCookies: production,
+    sessionCookieSameSite: process.env.SESSION_COOKIE_SAME_SITE,
+    enableDatabaseDiagnostic: !production,
     ai: {
         serviceUrl: process.env.AI_SERVICE_URL,
         model: process.env.AI_MODEL,

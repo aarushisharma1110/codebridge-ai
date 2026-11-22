@@ -61,7 +61,7 @@ Start PostgreSQL before running `test:postgres`. This suite verifies CodeBridge 
 
 - Register, log in, and view, create, edit, or delete questions according to account permissions.
 - Search visible questions and filter by ownership.
-- View account counts as an administrator.
+- View account counts and the registered-user directory as an administrator.
 - Review Qwen-backed wording suggestions in the editor and AI Assistant.
-- Milestone 2 usage reporting and the administrator user directory require additional backend endpoints.
+- Milestone 2 usage reporting requires additional backend endpoints.
 - Compare the migrated question features with the original Q2A application.

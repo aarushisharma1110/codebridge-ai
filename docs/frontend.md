@@ -1,6 +1,6 @@
 # CodeBridge AI frontend
 
-The React application uses the Express API for registration, login, session restoration, and question management. It includes an administrator page with account counts and a Qwen-powered wording assistant. Usage reporting and the administrator user directory are planned for Milestone 2.
+The React application uses the Express API for registration, login, session restoration, and question management. It includes an administrator page with account counts and a registered-user directory, plus a Qwen-powered wording assistant. Usage reporting is planned for Milestone 2.
 
 ## Run locally
 
@@ -23,7 +23,7 @@ npm --prefix frontend run dev
 
 Open [the local frontend](http://localhost:5173). Register and then log in to use question management, or follow the [demo account instructions](authentication.md#seed-the-course-demo-accounts) to exercise both roles in a disposable environment.
 
-Create `frontend/.env.local` from `frontend/.env.example` if the API runs elsewhere. `VITE_API_BASE_URL` includes `/api/v1`. The development default is `http://localhost:3000/api/v1`. If port 3000 is occupied, set `PORT=3300` in the root `.env` and `VITE_API_BASE_URL=http://localhost:3300/api/v1` in `frontend/.env.local`, then restart both servers. Vite exposes variables prefixed with `VITE_` to the browser. Keep `JWT_SECRET` and the model server settings in the backend environment.
+Set `VITE_API_BASE_URL` in `frontend/.env.local` if the API runs elsewhere. The URL includes `/api/v1`. The development default is `http://localhost:3000/api/v1`. If port 3000 is occupied, set `PORT=3300` in the root `.env` and `VITE_API_BASE_URL=http://localhost:3300/api/v1` in `frontend/.env.local`, then restart both servers. Vite exposes variables prefixed with `VITE_` to the browser. Keep `JWT_SECRET` and the model server settings in the backend environment.
 
 ## Routes and permissions
 
@@ -114,10 +114,9 @@ The following interfaces are proposed contracts. Update the corresponding functi
 | Endpoint | Proposed JSON contract |
 | --- | --- |
 | `GET /usage` | Return `{ total, threshold, breakdown? }`. The optional breakdown contains `{ method, endpoint, count, errorCount? }` rows. |
-| `GET /admin/users` | Return `{ users: [{ id, email, role, created_at, api_calls? }] }`. |
 | `GET /admin/usage` | Return `{ byUser: [{ user_id, email, count }], byEndpoint: [{ method, endpoint, count, errorCount? }] }`. |
 
-These endpoints require a session. The two administrator endpoints require administrator authorization. The database schema includes `api_usage`. Backend request tracking and reporting still need implementation. The intended notice threshold is 20 eligible requests. Requests continue after the threshold. Registration, login, logout, documentation, and CORS preflight are excluded.
+These endpoints require a session. The administrator usage endpoint also requires administrator authorization. The database schema includes `api_usage`. Backend request tracking and reporting still need implementation. The intended notice threshold is 20 eligible requests. Requests continue after the threshold. Registration, login, logout, documentation, and CORS preflight are excluded.
 
 ## Build and test
 
@@ -140,8 +139,8 @@ flowchart LR
     API -->|Private chat completions| Qwen[llama.cpp with Qwen2.5-3B]
 ```
 
-1. Deploy the frontend and API to separate HTTPS origins on the same site, such as `https://app.example.com` and `https://api.example.com`. The existing `SameSite=Lax` cookie requires same-site browser API requests. [Cookie behavior reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie#samesitesamesite-value)
+1. Deploy the frontend and API to separate HTTPS origins. Use the default `SameSite=Lax` for two origins on the same site, such as `https://app.example.com` and `https://api.example.com`. For the current deployment across Netlify and DuckDNS, follow the [Netlify and PM2 configuration](production.md#netlify-and-pm2-on-contabo).
 2. Set `VITE_API_BASE_URL=https://api.example.com/api/v1` in the frontend build environment. Run `npm --prefix frontend ci` and `npm --prefix frontend run build` from the repository root. Publish `frontend/dist` with an `index.html` fallback for client routes.
 3. Deploy Express from the repository root so the checkout includes both `backend/` and `lang/message/en/messages.json`. Run `npm --prefix backend ci --omit=dev` and start with `npm --prefix backend start`. Set `NODE_ENV=production`, the host-provided `PORT`, and `CLIENT_ORIGIN` to the exact frontend origin without a trailing slash. Supply `DATABASE_URL` and `JWT_SECRET` through the host's secret configuration.
 4. Use persistent PostgreSQL and initialize a fresh database with `backend/db/schema.sql`. Give Express a private route to llama.cpp and configure `AI_SERVICE_URL`, `AI_MODEL`, and `AI_TIMEOUT_MS` as needed. Allow enough time for inference in the deployment's request timeout.
-5. Verify `GET /api/v1/health` and `GET /api/v1/db-test`. In the deployed browser, register, sign in, reload to test session restoration, create and edit a question, verify the administrator page, and request a live Qwen suggestion.
+5. Verify that public `GET /api/v1/health` returns `200` and `GET /api/v1/db-test` returns `404` in production. In the deployed browser, register, sign in, reload to test session restoration, create and edit a question, verify the administrator page, and request a live Qwen suggestion.

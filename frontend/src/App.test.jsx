@@ -28,8 +28,8 @@ function start(path, { account = member, routes = {} } = {}) {
     return new Response(null, { status: 404 })
   })
   vi.stubGlobal('fetch', fetch)
-  render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>)
-  return { fetch, user: userEvent.setup() }
+  const view = render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>)
+  return { fetch, user: userEvent.setup(), unmount: view.unmount }
 }
 
 beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
@@ -41,8 +41,9 @@ afterEach(() => {
 
 describe('session and authorization', () => {
   it('protects deep links and returns there after login', async () => {
+    const session = vi.fn().mockImplementationOnce(unauthenticated).mockImplementation(() => json({ user: member }))
     const { user, fetch } = start('/questions/8', {
-      account: null, routes: { 'POST /auth/login': () => json({ user: member }) },
+      routes: { 'GET /auth/me': session, 'POST /auth/login': () => json({ user: member }) },
     })
     await screen.findByRole('heading', { name: 'Welcome back' })
     await user.click(screen.getByRole('button', { name: 'Log in' }))
@@ -54,7 +55,39 @@ describe('session and authorization', () => {
     expect(screen.getByLabelText('Password', { exact: true }).type).toBe('text')
     await user.click(screen.getByRole('button', { name: 'Log in' }))
     await screen.findByRole('heading', { name: own.title })
+    expect(session).toHaveBeenCalledTimes(2)
     expect(fetch.mock.calls.every(([, options]) => options.credentials === 'include')).toBe(true)
+  })
+
+  it('stays on the login page when accepted credentials do not establish a session', async () => {
+    const { user, fetch } = start('/questions/8', {
+      account: null, routes: { 'POST /auth/login': () => json({ user: member }) },
+    })
+    await screen.findByRole('heading', { name: 'Welcome back' })
+    await user.type(screen.getByLabelText('Email address'), member.email)
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'a passphrase')
+    await user.click(screen.getByRole('button', { name: 'Log in' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('could not establish a session')
+    expect(screen.getByRole('button', { name: 'Log in' }).disabled).toBe(false)
+    expect(fetch.mock.calls.map(([url]) => new URL(url, 'http://localhost').pathname))
+      .toEqual(['/api/v1/auth/me', '/api/v1/auth/login', '/api/v1/auth/me'])
+  })
+
+  it('shows the full email on the Questions landing page after login and session restoration', async () => {
+    const session = vi.fn().mockImplementationOnce(unauthenticated).mockImplementation(() => json({ user: member }))
+    const routes = { 'GET /auth/me': session, 'POST /auth/login': () => json({ user: member }) }
+    const { user, unmount } = start('/login', { routes })
+    await screen.findByRole('heading', { name: 'Welcome back' })
+    await user.type(screen.getByLabelText('Email address'), member.email)
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'a passphrase')
+    await user.click(screen.getByRole('button', { name: 'Log in' }))
+    await screen.findByRole('heading', { name: 'My Questions' })
+    expect(screen.getByText(member.email, { exact: true })).toBeTruthy()
+
+    unmount()
+    start('/questions', { routes })
+    expect(await screen.findByText(member.email, { exact: true })).toBeTruthy()
+    expect(session).toHaveBeenCalledTimes(3)
   })
 
   it('validates registration, shows a duplicate error, and redirects after success', async () => {

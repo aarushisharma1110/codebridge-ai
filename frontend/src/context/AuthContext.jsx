@@ -43,7 +43,12 @@ export function AuthProvider({ children }) {
   }
 
   async function login(credentials) {
-    const account = await auth.login(credentials)
+    const profile = await auth.login(credentials)
+    const account = await auth.me().catch((failure) => {
+      if (failure.status === 401) throw new Error(messages.auth.sessionNotEstablished)
+      throw failure
+    })
+    if (account.id !== profile.id) throw new Error(messages.auth.sessionNotEstablished)
     advanceSession()
     if (interruptedDraft.current?.owner !== account.id) interruptedDraft.current = null
     setExpired(false)

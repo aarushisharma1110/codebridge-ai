@@ -1,0 +1,149 @@
+name: codebridge-production
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: https://api.${SITE_DOMAIN:?Set SITE_DOMAIN}/api/v1
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+      FRONTEND_HOST: app.${SITE_DOMAIN:?Set SITE_DOMAIN}
+      API_HOST: api.${SITE_DOMAIN:?Set SITE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      CLIENT_ORIGIN: https://app.${SITE_DOMAIN:?Set SITE_DOMAIN}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      PGHOST: postgres
+      PGDATABASE: codebridge_ai
+      PGUSER: codebridge_app
+      PGPASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD}
+      AI_SERVICE_URL: http://llama:8080
+      AI_MODEL: qwen2.5-3b-instruct-q4_k_m
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-90000}
+    networks: [edge, private]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const pool = require('./db');
+          fetch('http://127.0.0.1:3000/api/v1/health')
+          .then(response => { if (!response.ok) throw Error('API unavailable'); return pool.query('SELECT 1') })
+          .catch(() => { process.exitCode = 1 }).finally(() => pool.end())
+      interval: 10s
+      timeout: 4s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    <<: *runtime
+    image: postgres:17.12-bookworm
+    environment:
+      POSTGRES_DB: codebridge_ai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: [CMD, pg_isready, -h, "127.0.0.1", -U, postgres, -d, codebridge_ai]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  migrate:
+    image: postgres:17.12-bookworm
+    profiles: [tools]
+    entrypoint: [psql]
+    command: [-X, --single-transaction, -v, ON_ERROR_STOP=1, -f, /opt/codebridge/migrate.sql]
+    environment:
+      PGHOST: postgres
+      PGDATABASE: codebridge_ai
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD}
+    volumes:
+      - ./deploy/migrate.sql:/opt/codebridge/migrate.sql:ro
+      - ./backend/db/schema.sql:/opt/codebridge/schema.sql:ro
+    networks: [private]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  llama:
+    <<: *runtime
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp@sha256:5b43086e3ba7ea5794d72904654f6cd41224a9b1c6ac0398f4940ee380d30f23}
+    command:
+      - --model
+      - /models/qwen.gguf
+      - --alias
+      - qwen2.5-3b-instruct-q4_k_m
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "4096"
+      - --parallel
+      - "1"
+      - --threads
+      - "${LLAMA_THREADS:-4}"
+      - --no-ui
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s
+    volumes:
+      - type: bind
+        source: ${LLAMA_MODEL_PATH:?Set LLAMA_MODEL_PATH}
+        target: /models/qwen.gguf
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [private]
+
+networks:
+  edge:
+  private:
+    internal: true
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

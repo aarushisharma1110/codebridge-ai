@@ -17,13 +17,16 @@ const NewQuestion = () => <Link className="button primary" to="/questions/new">
 export function QuestionsPage() {
   const { user } = useAuth()
   const { state } = useLocation()
-  const load = useResource(questions.list)
   const [search, setSearch] = useState('')
   const [scope, setScope] = useState('all')
+  const isAdmin = user.role === 'admin'
+  const showingHidden = isAdmin && scope === 'hidden'
+  const load = useResource(showingHidden ? questions.listHidden : questions.list)
 
   return <>
     <PageHeading eyebrow="Workspace" title="My Questions"
-      description="Create, improve, and manage your questions in one place." action={<NewQuestion />} />
+      description={<>Create, improve, and manage your questions in one place.<br />
+        Signed in as <strong>{user.email}</strong></>} action={<NewQuestion />} />
     {state?.message && <Notice kind="success">{state.message}</Notice>}
     <div className="intro">
       <span className="feature-icon"><CircleHelp size={22} aria-hidden="true" /></span>
@@ -35,9 +38,10 @@ export function QuestionsPage() {
       <div className="list-toolbar">
         <h2 id="question-list-title">Questions</h2>
         <div className="list-controls">
-          <div className="scope" role="group" aria-label="Question ownership">
-            <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>All visible</button>
+          <div className="scope" role="group" aria-label="Question filters">
+            <button type="button" aria-pressed={scope !== 'mine' && !showingHidden} onClick={() => setScope('all')}>All visible</button>
             <button type="button" aria-pressed={scope === 'mine'} onClick={() => setScope('mine')}>Owned by me</button>
+            {isAdmin && <button type="button" aria-pressed={showingHidden} onClick={() => setScope('hidden')}>Hidden</button>}
           </div>
           <label className="search-control">
             <Search size={17} aria-hidden="true" />
@@ -48,21 +52,23 @@ export function QuestionsPage() {
       </div>
       <Resource state={load} label="questions">{(items) => {
         const query = search.trim().toLowerCase()
-        const visible = items.filter((item) => (scope === 'all' || item.user_id === user.id) &&
+        const matching = items.filter((item) => (scope !== 'mine' || item.user_id === user.id) &&
           (item.title.toLowerCase().includes(query) || item.body.toLowerCase().includes(query)))
+        if (!items.length && showingHidden) return <EmptyState icon={FileText} title="No hidden questions" />
         if (!items.length) return <EmptyState icon={FileText} title="No questions yet">
           Select New Question to write your first question.
         </EmptyState>
-        if (!visible.length) return <EmptyState icon={Search} title={query ? 'No matching questions' : 'No questions owned by you'}>
+        if (!matching.length) return <EmptyState icon={Search} title={query ? 'No matching questions' : 'No questions owned by you'}>
           {query ? 'Try another search term or ownership filter.' : 'Select New Question to create one.'}
         </EmptyState>
-        return <ul className="question-rows">{visible.map((item) => <li key={item.id}>
+        return <ul className="question-rows">{matching.map((item) => <li key={item.id}>
           <span className="row-icon"><FileText size={20} aria-hidden="true" /></span>
           <div className="row-text">
             <Link to={`/questions/${item.id}`}>{item.title}</Link>
             {item.body && <p>{item.body}</p>}
           </div>
           <div className="row-meta">
+            {showingHidden && <span className="pill">Hidden</span>}
             <span className={'pill' + (item.user_id === user.id ? ' owned' : '')}>
               {item.user_id === user.id ? 'Yours' : 'Shared'}
             </span>
@@ -94,21 +100,105 @@ function LoadedQuestion({ id, mode }) {
   const loadQuestion = useCallback((signal) => questions.get(id, signal), [id])
   const state = useResource(loadQuestion)
   return <Resource state={state} label="question">{(question) => {
-    const owned = user.id === question.user_id
-    const editable = owned || user.role === 'admin'
-    if (mode === 'edit') return editable ? <QuestionEditor question={question} owned={owned} />
-      : <Navigate to={`/questions/${id}`} replace />
-    return <article className="narrow">
-      <Back />
-      <PageHeading title={question.title} eyebrow={owned ? 'Your question' : 'Shared question'}
-        action={editable && <Link className="button primary" to={`/questions/${id}/edit`}>Edit question</Link>} />
-      <div className="panel padded">
-        <p className="subtle">Created <DateValue value={question.created_at} />
-          {question.last_edited_by && <> · Updated <DateValue value={question.updated_at} /></>}</p>
-        <p className="prewrap question-body">{question.body || 'No additional details.'}</p>
-      </div>
-    </article>
+    if (question.hidden && user.role !== 'admin') {
+      return <Notice kind="error">This question is hidden.</Notice>
+    }
+    if (mode === 'edit') {
+      const editable = !question.hidden && (user.id === question.user_id || user.role === 'admin')
+      return editable ? <QuestionEditor question={question} owned={user.id === question.user_id} />
+        : <Navigate to={`/questions/${id}`} replace />
+    }
+    return <QuestionDetail initialQuestion={question} user={user} />
   }}</Resource>
+}
+
+function QuestionDetail({ initialQuestion, user }) {
+  const navigate = useNavigate()
+  const [question, setQuestion] = useState(initialQuestion)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [working, setWorking] = useState('')
+  const dialog = useRef(null)
+  const removeButton = useRef(null)
+  const owned = user.id === question.user_id
+  const isAdmin = user.role === 'admin'
+  const canEdit = !question.hidden && (owned || isAdmin)
+  const canReshow = question.hidden && isAdmin
+  const busy = Boolean(working)
+
+  async function changeVisibility() {
+    if (busy || (!canEdit && !canReshow)) return
+    setMessage('')
+    setError('')
+    setWorking(canReshow ? 'reshow' : 'hide')
+    try {
+      const updated = await (canReshow ? questions.reshow(question.id)
+        : questions.hide(question.id, { returnQuestion: isAdmin }))
+      if (!isAdmin) {
+        navigate('/questions', { replace: true, state: { message: 'Question hidden.' } })
+        return
+      }
+      setQuestion(updated)
+      setMessage(canReshow ? 'Question reshown.' : 'Question hidden.')
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setWorking('')
+    }
+  }
+
+  async function remove() {
+    if (busy || !canReshow) return
+    setDeleteError('')
+    setWorking('delete')
+    try {
+      await questions.remove(question.id)
+      navigate('/questions', { replace: true, state: { message: 'Question permanently deleted.' } })
+    } catch (failure) {
+      setDeleteError(failure.message)
+      setWorking('')
+    }
+  }
+
+  return <article className="narrow">
+    <Back />
+    <PageHeading title={question.title} eyebrow={owned ? 'Your question' : 'Shared question'}
+      action={canEdit && !busy && <Link className="button primary" to={`/questions/${question.id}/edit`}>Edit question</Link>} />
+    {message && <Notice kind="success">{message}</Notice>}
+    {error && <Notice kind="error">{error}</Notice>}
+    <div className="panel padded">
+      {question.hidden && <span className="pill">Hidden</span>}
+      <p className="subtle">Created <DateValue value={question.created_at} />
+        {question.last_edited_by && <> · Updated <DateValue value={question.updated_at} /></>}</p>
+      <p className="prewrap question-body">{question.body || 'No additional details.'}</p>
+    </div>
+    {(canEdit || canReshow) && <div className="actions danger-zone">
+      <button type="button" className="button secondary" disabled={busy} onClick={changeVisibility}>
+        {canReshow ? 'Reshow Question' : 'Hide Question'}
+      </button>
+      {canReshow && <>
+        <button type="button" className="button danger" ref={removeButton} disabled={busy} onClick={() => {
+          setDeleteError('')
+          dialog.current.showModal()
+        }}><Trash2 size={17} aria-hidden="true" /> Delete Permanently</button>
+        <dialog ref={dialog} aria-labelledby="delete-title" aria-describedby="delete-description"
+          onClose={() => removeButton.current?.focus()}
+          onCancel={(event) => { if (busy) event.preventDefault() }}>
+          <h2 id="delete-title">Permanently delete this question?</h2>
+          <p id="delete-description">“{question.title}” will be permanently deleted. This cannot be undone.</p>
+          {deleteError && <Notice kind="error">{deleteError}</Notice>}
+          <div className="actions">
+            <button type="button" autoFocus className="button secondary" disabled={busy}
+              onClick={() => dialog.current.close()}>Cancel</button>
+            <button type="button" className="button danger solid" disabled={busy} onClick={remove}>
+              {working === 'delete' ? 'Deleting…' : 'Delete Permanently'}
+            </button>
+          </div>
+        </dialog>
+      </>}
+    </div>}
+  </article>
 }
 
 function QuestionEditor({ question, owned }) {

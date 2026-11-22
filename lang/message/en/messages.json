@@ -49,6 +49,7 @@
     "registered": "Account created. Log in to get started.",
     "signedOut": "You’ve been logged out.",
     "sessionEnded": "Your session ended. Log in to continue.",
+    "sessionNotEstablished": "Your browser could not establish a session. Check whether it allows cookies for this site and try again.",
     "sessionTimedOut": "Checking your session timed out.",
     "workspace": "Your question workspace",
     "createAnAccount": "Create an account",

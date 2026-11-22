@@ -14,6 +14,13 @@ function createAdminRouter(pool, requireAuth) {
         res.json(rows[0]);
     });
 
+    router.get('/users', requireAuth, requireAdmin, async (req, res) => {
+        const { rows } = await pool.query(
+            'SELECT id, email, role, created_at FROM users ORDER BY id'
+        );
+        res.json({ users: rows });
+    });
+
     return router;
 }
 

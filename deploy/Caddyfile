@@ -1,0 +1,34 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$FRONTEND_HOST} {
+	root * /srv
+	encode zstd gzip
+
+	handle /assets/* {
+		file_server
+	}
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$API_HOST} {
+	# Block the development database diagnostic at the public edge.
+	@publicApi {
+		path /api/v1/*
+		not path /api/v1/db-test /api/v1/db-test/
+	}
+	handle @publicApi {
+		reverse_proxy backend:3000 {
+			transport http {
+				response_header_timeout 135s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+}

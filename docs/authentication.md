@@ -2,7 +2,7 @@
 
 The Express API uses the existing PostgreSQL `users` table and shared connection pool. Registration trims and lowercases email addresses, accepts common ASCII email formats up to 254 characters, and requires passwords of at least 8 characters and at most 72 UTF-8 bytes. The byte limit prevents bcrypt from silently truncating longer passwords. Passwords are passed to bcrypt as entered and PostgreSQL stores only the salted hash. Registration uses the database's default `user` role.
 
-Login compares the password against the stored bcrypt hash. After a match, the API signs a JWT with `JWT_SECRET`. The token identifies the account by ID and expires after one hour. Express sends it as the `codebridge_session` cookie with `HttpOnly`, `SameSite=Lax`, and `Path=/api/v1`. In production the cookie also has `Secure`. The browser stores and sends it automatically, and JavaScript cannot read it.
+Login compares the password against the stored bcrypt hash. After a match, the API signs a JWT with `JWT_SECRET`. The token identifies the account by ID and expires after one hour. Express sends it as the host-only `codebridge_session` cookie with `HttpOnly` and `Path=/api/v1`. The default is `SameSite=Lax`. Production adds `Secure` and can opt in to `SameSite=None` for a cross-site HTTPS deployment. React calls `/auth/me` after login to verify the browser can send the cookie before entering the workspace. Logout expires the cookie with the same attributes.
 
 On protected requests, the authentication middleware verifies the token's signature, issuer, and expiration, then loads the account from PostgreSQL. An administrator has the same profile access as a user and can also read the admin dashboard. The admin middleware checks the current database role for each request, so a role change takes effect on the next request. Public registration ignores any submitted role.
 
@@ -15,6 +15,7 @@ On protected requests, the authentication middleware verifies the token's signat
 | `GET /api/v1/auth/me` | Session cookie | `200` with the current profile |
 | `POST /api/v1/auth/logout` | Empty body. Cookie optional. | `204` with a cookie expiration header and an empty body |
 | `GET /api/v1/admin/dashboard` | Administrator session cookie | `200` with counts by role, for example `{"users": 1, "admins": 1}` |
+| `GET /api/v1/admin/users` | Administrator session cookie | `200` with `{ users: [{ id, email, role, created_at }] }` |
 
 Example JSON body for registration and login:
 
@@ -84,6 +85,7 @@ Follow [the database guide](database.md) for the existing Compose setup. Edit th
 | `CLIENT_ORIGIN` | Exact frontend origin, including scheme and port when applicable, with no trailing slash. Local example `http://localhost:5173`. |
 | `PORT` | API port, defaults to `3000` |
 | `NODE_ENV` | Set to `production` for an HTTPS deployment. This enables `Secure` cookies and blocks the demo seed command. |
+| `SESSION_COOKIE_SAME_SITE` | Defaults to `lax` for local development and same-site HTTPS deployments. Set to `none` for separate HTTPS sites. This requires `NODE_ENV=production` and an HTTPS `CLIENT_ORIGIN`. |
 | `TEST_DATABASE_URL` | Optional PostgreSQL URL for integration tests. Defaults to `DATABASE_URL`. The role needs permission to create a schema in that database. |
 
 ```sh
@@ -119,6 +121,6 @@ npm --prefix backend run test:postgres
 
 `npm --prefix backend test` runs the mock-backed tests without PostgreSQL. For the integration suite, start PostgreSQL with `docker compose up -d --wait postgres` and configure the root `.env` as described in the [database guide](database.md). Set `TEST_DATABASE_URL` to target a separate test database if desired. Keep connection URLs in the environment or the ignored root `.env`.
 
-The PostgreSQL suite runs the existing Express app on a temporary loopback port, registers test accounts, logs in, and uses the issued session cookies to exercise question CRUD. It checks request validation, owner and admin permissions, origin checks, and the effect of successful and rejected requests on stored rows.
+The PostgreSQL suite runs the existing Express app on a temporary loopback port, registers test accounts, logs in, and uses the issued session cookies to exercise question CRUD and the administrator user directory. It checks request validation, owner and admin permissions, origin checks, and the effect of successful and rejected requests on stored rows.
 
 Each run creates a uniquely named schema, limits the application connection pool's search path to that schema, and loads `backend/db/schema.sql` there. Teardown closes the listener and pool before dropping the schema created by that run. The suite requires neither a separately running Express server nor Qwen.

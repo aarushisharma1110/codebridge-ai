@@ -93,7 +93,7 @@ async function account(name, role = 'user') {
     const cookie = login.headers.get('set-cookie');
     assert.match(cookie, /^codebridge_session=/);
     assert.match(cookie, /; HttpOnly/i);
-    return { id: login.data.user.id, cookie: cookie.split(';', 1)[0] };
+    return { id: login.data.user.id, profile: login.data.user, cookie: cookie.split(';', 1)[0] };
 }
 
 async function savedQuestion(id) {
@@ -106,6 +106,22 @@ async function createQuestion(body = { title: validTitle, body: 'Original detail
     assert.equal(result.status, 201, JSON.stringify(result.data));
     return result.data.question;
 }
+
+test('allows only administrators to list registered users and returns only public profile fields', async () => {
+    assert.equal((await request('/admin/users')).status, 401);
+    assert.equal((await request('/admin/users', { cookie: member.cookie })).status, 403);
+
+    const directory = await request('/admin/users', { cookie: admin.cookie });
+    assert.equal(directory.status, 200);
+    assert.equal(directory.headers.get('cache-control'), 'no-store');
+    const profiles = [owner, member, admin].map(({ profile: { id, email, role, created_at } }) =>
+        ({ id, email, role, created_at }));
+    assert.deepEqual(directory.data, { users: profiles });
+
+    const dashboard = await request('/admin/dashboard', { cookie: admin.cookie });
+    assert.equal(dashboard.status, 200);
+    assert.deepEqual(dashboard.data, { users: 2, admins: 1 });
+});
 
 test('creates, trims and persists a question with the authenticated owner', async () => {
     const question = await createQuestion({
@@ -206,7 +222,7 @@ test('rejects invalid and unauthorized edits without changing the stored row', a
     assert.deepEqual(await savedQuestion(question.id), stored);
 });
 
-test('permits only the owner to delete and removes the PostgreSQL row', async () => {
+test('permits only the owner to delete a visible question and removes the PostgreSQL row', async () => {
     const question = await createQuestion();
     const route = `/questions/${question.id}`;
     const stored = await savedQuestion(question.id);
@@ -221,13 +237,71 @@ test('permits only the owner to delete and removes the PostgreSQL row', async ()
     assert.equal((await request(route, { cookie: owner.cookie })).status, 404);
 });
 
+test('restricts hidden questions to administrators, including after an owner hides a question', async () => {
+    const question = await createQuestion();
+    const route = `/questions/${question.id}`;
+    assert.equal((await request(`${route}/hide`, { method: 'POST', cookie: member.cookie })).status, 403);
+    const hidden = await request(`${route}/hide`, { method: 'POST', cookie: owner.cookie });
+    assert.equal(hidden.status, 204);
+    assert.equal(hidden.data, undefined);
+    const stored = await savedQuestion(question.id);
+    assert.equal(stored.hidden, true);
+    assert.equal(stored.last_edited_by, owner.id);
+
+    for (const actor of [owner, member, admin]) {
+        const list = await request('/questions', { cookie: actor.cookie });
+        assert.equal(list.status, 200);
+        assert.ok(list.data.questions.every((item) => item.id !== question.id && item.hidden === false));
+    }
+    for (const actor of [owner, member]) {
+        for (const [method, target, body] of [
+            ['GET', '/questions/hidden'], ['GET', route],
+            ['PATCH', route, { title: 'Cannot edit this hidden question' }], ['DELETE', route],
+            ['POST', `${route}/hide`], ['POST', `${route}/reshow`]
+        ]) {
+            const denied = await request(target, { method, cookie: actor.cookie, body });
+            assert.equal(denied.status, 403, `${method} ${target}`);
+            assert.deepEqual(Object.keys(denied.data), ['message']);
+        }
+    }
+    assert.deepEqual(await savedQuestion(question.id), stored);
+
+    const detail = await request(route, { cookie: admin.cookie });
+    assert.equal(detail.status, 200);
+    assert.equal(detail.data.question.hidden, true);
+    assert.equal(detail.data.question.body, question.body);
+    const list = await request('/questions/hidden', { cookie: admin.cookie });
+    assert.equal(list.status, 200);
+    assert.ok(list.data.questions.every((item) => item.hidden === true));
+    assert.deepEqual(list.data.questions.find(({ id }) => id === question.id), detail.data.question);
+
+    const adminEdit = await request(route, { method: 'PATCH', cookie: admin.cookie, body: { title: validTitle } });
+    assert.equal(adminEdit.status, 409);
+    assert.deepEqual(await savedQuestion(question.id), stored);
+    const reshown = await request(`${route}/reshow`, { method: 'POST', cookie: admin.cookie });
+    assert.equal(reshown.status, 200);
+    assert.equal(reshown.data.question.hidden, false);
+    assert.equal(reshown.data.question.last_edited_by, admin.id);
+    assert.equal((await request(route, { cookie: member.cookie })).status, 200);
+    assert.deepEqual((await request('/questions/hidden', { cookie: admin.cookie })).data.questions, []);
+
+    const hiddenByAdmin = await request(`${route}/hide`, { method: 'POST', cookie: admin.cookie });
+    assert.equal(hiddenByAdmin.status, 200);
+    assert.equal(hiddenByAdmin.data.question.hidden, true);
+    assert.equal(hiddenByAdmin.data.question.last_edited_by, admin.id);
+    const deleted = await request(route, { method: 'DELETE', cookie: admin.cookie });
+    assert.equal(deleted.status, 204);
+    assert.equal(await savedQuestion(question.id), undefined);
+});
+
 test('requires a session on all question routes and enforces the write origin', async () => {
     const question = await createQuestion();
     const route = `/questions/${question.id}`;
     const stored = await savedQuestion(question.id);
     for (const [method, target, body] of [
-        ['GET', '/questions'], ['GET', route], ['POST', '/questions', { title: validTitle }],
-        ['PATCH', route, { title: validTitle }], ['DELETE', route]
+        ['GET', '/questions'], ['GET', '/questions/hidden'], ['GET', route],
+        ['POST', '/questions', { title: validTitle }], ['PATCH', route, { title: validTitle }],
+        ['POST', `${route}/hide`], ['POST', `${route}/reshow`], ['DELETE', route]
     ]) {
         assert.equal((await request(target, { method, body })).status, 401);
         if (method !== 'GET') {

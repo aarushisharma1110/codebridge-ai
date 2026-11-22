@@ -5,8 +5,14 @@ const COOKIE_NAME = 'codebridge_session';
 const SESSION_SECONDS = 60 * 60;
 const ISSUER = 'codebridge-ai';
 
-function createSessionAuth({ pool, secret, secure }) {
-    const cookieOptions = { httpOnly: true, secure, sameSite: 'lax', path: '/api/v1' };
+function createSessionAuth({ pool, secret, secure, sameSite = 'lax' }) {
+    if (!['lax', 'none'].includes(sameSite)) {
+        throw new Error('Set SESSION_COOKIE_SAME_SITE to lax or none');
+    }
+    if (sameSite === 'none' && !secure) {
+        throw new Error('SESSION_COOKIE_SAME_SITE=none requires secure production cookies');
+    }
+    const cookieOptions = { httpOnly: true, secure, sameSite, path: '/api/v1' };
 
     function setCookie(res, userId) {
         const token = jwt.sign({}, secret, {

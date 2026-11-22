@@ -7,7 +7,7 @@ const isUser = (user) => user && isCount(user.id) &&
 const isQuestion = (question) => question && isCount(question.id) && isCount(question.user_id) &&
   typeof question.title === 'string' && typeof question.body === 'string' &&
   (question.hidden === undefined || typeof question.hidden === 'boolean')
-const isQuestionList = (items) => Array.isArray(items) && items.every(isQuestion)
+const isQuestionList = (items) => Array.isArray(items) && items.every((item) => isQuestion(item) && !item.hidden)
 const isHiddenQuestion = (question) => isQuestion(question) && question.hidden === true
 let sessionVersion = 0
 export const SESSION_EXPIRED = 'codebridge:session-expired'
@@ -87,7 +87,12 @@ export const questions = {
   get: (id, signal) => readField(questionPath(id), { signal }, 'question', isQuestion),
   create: (body) => readField('/questions', { method: 'POST', body }, 'question', isQuestion),
   update: (id, body) => readField(questionPath(id), { method: 'PATCH', body }, 'question', isQuestion),
-  hide: (id) => readField(`${questionPath(id)}/hide`, { method: 'POST' }, 'question', isHiddenQuestion),
+  hide: async (id, { returnQuestion }) => {
+    const data = await request(`${questionPath(id)}/hide`, { method: 'POST' })
+    if (returnQuestion && isHiddenQuestion(data?.question)) return data.question
+    if (!returnQuestion && data === undefined) return
+    throw new ApiError(messages.client.unexpectedResponse)
+  },
   reshow: (id) => readField(`${questionPath(id)}/reshow`, { method: 'POST' }, 'question', (question) =>
     isQuestion(question) && question.hidden === false),
   remove: (id) => request(questionPath(id), { method: 'DELETE' }),
