@@ -1,8 +1,10 @@
 # Production deployment on Ubuntu
 
+The active deployment uses Netlify for React and Contabo for the Express API. The full Docker Compose stack below is an alternative with its own proxy, volumes, and same-site cookie configuration.
+
 ## Netlify and PM2 on Contabo
 
-The current frontend is at `https://codebridge-ai.netlify.app`. Caddy serves the Express API at `https://codebridge-api.duckdns.org` and passes `/api/v1/*` to PM2's Express process with the path intact. The two origins are on different sites.
+The current frontend is at `https://codebridge-ai.netlify.app`. Host Caddy serves the Express API at `https://codebridge-api.duckdns.org` and passes `/api/v1/*` to PM2's Express process with the path intact. The Contabo PostgreSQL container publishes its port on `127.0.0.1:5433`, and Express connects privately to llama.cpp. Use the existing PM2 app and host Caddy configuration. The repository [Compose Caddyfile](../deploy/Caddyfile) expects a Docker service named `backend`.
 
 Set these values in the Express process environment:
 
@@ -12,9 +14,11 @@ CLIENT_ORIGIN=https://codebridge-ai.netlify.app
 SESSION_COOKIE_SAME_SITE=none
 ```
 
-Keep `JWT_SECRET` and `DATABASE_URL` in the existing private production configuration. If PM2 injects variables, update its configured environment and restart the Express process with `--update-env`. If Express reads the private repository-root `.env`, restart after updating that file. Existing PM2 environment variables take precedence over values in `.env`. Keep Express behind Caddy and preserve the request `Origin` and response `Set-Cookie` headers.
+Keep `JWT_SECRET` and `DATABASE_URL` in the existing private production configuration. Keep the checkout's `backend/` and `lang/` directories together so Express can load the message catalog. The backend entry point is `backend/server.js`. If PM2 injects variables, update its configured environment and restart the Express process with `--update-env`. If Express reads the private repository-root `.env`, restart after updating that file. Existing PM2 environment variables take precedence over values in `.env`. Keep Express behind Caddy and preserve the request `Origin` and response `Set-Cookie` headers.
 
-Set `VITE_API_BASE_URL=https://codebridge-api.duckdns.org/api/v1` in Netlify's build environment. From the repository root, build with `npm --prefix frontend run build` and publish `frontend/dist` with the generated `_redirects` file. After publishing, open and refresh `/login`, `/register`, `/admin`, and `/assistant` directly to verify that the requests reach React.
+Use `AI_SERVICE_URL` for the private llama.cpp origin if it differs from the default `http://127.0.0.1:8080`. Set `AI_MODEL` to the alias served by llama.cpp.
+
+Set `VITE_API_BASE_URL=https://codebridge-api.duckdns.org/api/v1` in Netlify's build environment. The root [netlify.toml](../netlify.toml) runs `npm run build` from `frontend` and publishes `frontend/dist`. Vite copies [the SPA rewrite](../frontend/public/_redirects) into that directory. After publishing, open and refresh `/login`, `/register`, `/questions`, `/admin`, and `/assistant` directly to verify that the requests reach React.
 
 With `NODE_ENV=production`, Express disables `/api/v1/db-test`. Verify that it returns `404` publicly and `/api/v1/health` still returns `200`.
 
@@ -22,13 +26,13 @@ Verify the deployment in a browser with an authorized test account:
 
 1. Open `/login` directly. The API's `GET /api/v1/auth/me` returns `401 Authentication required` before sign-in.
 2. Register if needed and sign in. Registration returns `201` and requires a separate login. The login preflight returns `204` with the exact frontend origin and `Access-Control-Allow-Credentials: true`. Successful login returns `200` and a host-only `HttpOnly; Secure; SameSite=None; Path=/api/v1` cookie.
-3. Verify the following `/auth/me` returns `200` and that a reload keeps the session. Sign out and confirm the logout response expires the same cookie and `/auth/me` returns `401` again. Inspect cookie attributes without copying or sharing its value.
+3. Verify the following `/auth/me` returns `200` and that a reload keeps the session. With authorized test accounts, check the registered-user directory as an administrator, verify a regular user is denied, and request an AI suggestion. Sign out and confirm the logout response expires the same cookie and `/auth/me` returns `401` again. Inspect cookie attributes without copying or sharing its value.
 
 Browser privacy settings or extensions can still block cross-site cookies. For reliable browser support, use two HTTPS subdomains of the same site, such as `app.example.com` and `api.example.com`, and return the cookie setting to `lax`. The frontend and API remain separate origins. [Third-party cookie behavior](https://developer.mozilla.org/en-US/docs/Web/Privacy/Guides/Third-party_cookies).
 
 ## Alternative same-site Compose deployment
 
-The production Compose file runs Caddy, Express, PostgreSQL and a CPU-only llama.cpp server on one VPS. Caddy serves the Vite build on `https://app.<domain>` and proxies `/api/v1/*` on `https://api.<domain>` without rewriting paths. The backend health check calls the HTTP health endpoint and runs a private PostgreSQL query. Only Caddy publishes ports. PostgreSQL and llama.cpp share an internal Docker network with Express and have no host ports. The local Compose stack still uses PostgreSQL 17.6. Production pins PostgreSQL 17.12 for security fixes in the same major version. [PostgreSQL 17.12 release notes](https://www.postgresql.org/docs/17/release-17-12.html).
+The optional `docker-compose.production.yml` runs Caddy, Express, PostgreSQL, and a CPU-only llama.cpp server on one VPS. Caddy serves the Vite build on `https://app.<domain>` and proxies `/api/v1/*` on `https://api.<domain>` without rewriting paths. The backend health check calls the HTTP health endpoint and runs a private PostgreSQL query. Only Caddy publishes ports. PostgreSQL and llama.cpp share an internal Docker network with Express and have no host ports. This stack pins PostgreSQL 17.12. The PostgreSQL-only `docker-compose.yml` pins 17.6. [PostgreSQL 17.12 release notes](https://www.postgresql.org/docs/17/release-17-12.html).
 
 ## Prepare the host and DNS
 
@@ -138,7 +142,7 @@ prod exec -T backend node -e 'const pool = require("./db"); pool.query("SELECT 1
 
 ## Back up, initialize, or migrate PostgreSQL
 
-The production database has its own named Docker volume. On first start PostgreSQL creates `codebridge_ai`. `prod run --rm migrate` then creates the app role and applies the existing `backend/db/schema.sql` in one transaction with `ON_ERROR_STOP`. The schema only creates missing tables and adds a missing column. Rerunning it preserves rows and the existing app role password. The app role receives table and sequence privileges for the current API and no schema ownership. Coordinate password rotation through PostgreSQL and the production environment together. New schema changes need explicit migrations when `CREATE TABLE IF NOT EXISTS` cannot upgrade an existing table.
+The optional stack has its own named Docker volume. On first start PostgreSQL creates `codebridge_ai`. `prod run --rm migrate` then creates the app role and applies `backend/db/schema.sql` in one transaction with `ON_ERROR_STOP`. The schema creates missing tables and adds the `last_edited_by` and `hidden` columns if needed. Rerunning it preserves rows and the existing app role password. The app role receives table and sequence privileges for the current API and no schema ownership. Coordinate password rotation through PostgreSQL and the production environment together. New schema changes need explicit migrations when `CREATE TABLE IF NOT EXISTS` cannot upgrade an existing table.
 
 Before a schema or image update, take a private backup. Copy it to protected storage outside the VPS and test its restore in a separate database.
 
@@ -185,4 +189,4 @@ curl -fsSi -X OPTIONS "https://api.$site_domain/api/v1/auth/login" \
 
 Expect a `204` preflight with `Access-Control-Allow-Origin` set to the frontend origin and `Access-Control-Allow-Credentials: true`. In a browser, register and sign in using the frontend. Confirm login returns the API cookie with the listed attributes, reload and verify `/auth/me` succeeds, create and edit a test question, request a real AI suggestion, then sign out and confirm `/auth/me` returns `401`. Check `prod ps` for the published ports and confirm ports 3000, 5432 and 8080 are unreachable from outside the VPS.
 
-Before opening this deployment to unrestricted users, decide how to handle abuse. The current application permits public registration, and the authenticated AI route has no per-user inference quota. Usage reporting still depends on unimplemented API routes. Confirm the release scope with the question deletion work in progress.
+Before opening this deployment to unrestricted users, decide how to handle abuse. The current application permits public registration, and the authenticated AI route has no per-user inference quota. Usage reporting still depends on unimplemented API routes.

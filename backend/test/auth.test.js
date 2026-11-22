@@ -132,8 +132,18 @@ test('rejects unsafe or unsupported session cookie settings at startup', () => {
     }), /SESSION_COOKIE_SAME_SITE/);
 });
 
-for (const enableDatabaseDiagnostic of [true, false]) {
-    test(`keeps public health available with database diagnostics ${enableDatabaseDiagnostic ? 'enabled' : 'disabled'}`, async (t) => {
+for (const config of [
+    { name: 'development', clientOrigin: localOrigin, enableDatabaseDiagnostic: true },
+    {
+        name: 'cross-site production',
+        clientOrigin: netlifyOrigin,
+        secureCookies: true,
+        sessionCookieSameSite: 'none',
+        enableDatabaseDiagnostic: false
+    }
+]) {
+    test(`keeps public health available and enforces the diagnostic policy in ${config.name}`, async (t) => {
+        const { enableDatabaseDiagnostic } = config;
         const queries = [];
         const pool = {
             async query(sql) {
@@ -141,7 +151,7 @@ for (const enableDatabaseDiagnostic of [true, false]) {
                 return { rows: [{ current_database: 'test_database' }] };
             }
         };
-        const server = createApp({ pool, jwtSecret, clientOrigin: localOrigin, enableDatabaseDiagnostic })
+        const server = createApp({ pool, jwtSecret, ...config })
             .listen(0, '127.0.0.1');
         t.after(() => new Promise((resolve) => server.close(resolve)));
         await once(server, 'listening');

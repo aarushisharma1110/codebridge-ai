@@ -1,13 +1,13 @@
 # Q2A Source Analysis
 
-This document records the question-management rules of the original Question2Answer (Q2A) PHP application, read from its source code. The Node.js question API in `backend/routes/questions.js` is meant to reproduce these rules. Deliberate differences are tracked in [migration-notes.md](migration-notes.md).
+This document records the question-management rules of the original Question2Answer (Q2A) PHP application and the results of a historical comparison. See the [migration notes](migration-notes.md) for current CodeBridge behavior.
 
 ## Reference version
 
 | Item | Value |
 |---|---|
 | Repository | https://github.com/q2a/question2answer |
-| Release | v1.8.8 (2023-07-25), the latest tagged release |
+| Release tested | v1.8.8 (2023-07-25) |
 | Commit | `5a43593b39778adc4331fdb3f23f7d81fe73e72f` |
 | Licence | GPL v2 or later. The Q2A source is kept outside this repository. |
 
@@ -106,7 +106,7 @@ Corrections and the differences that are kept on purpose are recorded in [migrat
 
 ## Comparison checks and results
 
-Each check was run with the same input on Q2A v1.8.8 and on the Node.js API, as a logged-in regular user in both. The outcome compared is whether the request is accepted or rejected and what is stored, not the HTML or JSON response. Q2A was used through its web pages and its `qa_posts` table was read afterwards; the Node.js API was called directly and its `questions` table was read afterwards.
+Each check used the same input on Q2A v1.8.8 and on the Node.js API with the account roles listed in the scenarios. The comparison recorded whether each request was accepted and what the application stored. Q2A was used through its web pages and its `qa_posts` table was inspected afterwards. The Node.js API was called directly and its `questions` table was inspected afterwards.
 
 | Item | Value |
 |---|---|
@@ -129,4 +129,4 @@ Each check was run with the same input on Q2A v1.8.8 and on the Node.js API, as 
 | 10 | Delete: owner, then admin on a visible question, then admin on a hidden question | No delete button, no delete button, delete removes the row | 403, 409, 204 with the row removed | Yes |
 | 11 | Reshow by the owner: after hiding it himself, then after an admin hid it | Reshow button shown, then not shown | 200, then 403 | Yes |
 
-Check 7 found a mismatch in the first run (the Node.js API accepted duplicates); it was corrected before the results above. Viewing without login remains a deliberate difference; see [migration-notes.md](migration-notes.md).
+These results apply to the revision listed above. The duplicate check was added before the recorded run at `b4dc5b4`. The current create route accepts repeated title and body values, and moderation permissions have since changed. See the [current behavior comparison](migration-notes.md#current-question-behavior).

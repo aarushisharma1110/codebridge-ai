@@ -1,8 +1,6 @@
 # CodeBridge AI
 
-CodeBridge AI is a web application that explores moving question management features from Question2Answer (Q2A), an open-source PHP application, to a Node.js API using AI-assisted development.
-
-The project includes user and administrator accounts and question wording suggestions powered by Qwen2.5-3B-Instruct through a local llama.cpp server.
+CodeBridge AI is a BCIT COMP 4537 project that adapts Question2Answer (Q2A) question management to an Express REST API and a separate React frontend. PostgreSQL stores accounts and questions. A private llama.cpp service runs Qwen2.5-3B-Instruct to suggest clearer question wording.
 
 ## Tech Stack
 
@@ -24,27 +22,36 @@ codebridge-ai/
 ├── lang/                 # Shared English message catalog for Express and React
 ├── docs/                 # Setup, deployment, and Q2A migration evidence
 ├── docker-compose.yml    # Local PostgreSQL
+├── netlify.toml          # Frontend build and publish settings
+├── deploy/               # Proxy and database tooling for the optional Compose stack
 ├── .env.example          # Backend and database configuration example
 └── README.md
 ```
 
 ## Getting Started
 
-Follow the [Docker and database setup guide](docs/database.md) to set up your local database and run the backend.
+Use Node.js 20.19+ or 22.12+, npm, and Docker Compose. Follow the [database setup guide](docs/database.md#2-add-your-settings) and [authentication setup](docs/authentication.md#configure-and-run) to configure the private root `.env`. Start Qwen separately using the [local inference instructions](docs/frontend.md#local-qwen-inference).
 
-The [authentication guide](docs/authentication.md) covers the Milestone 1 endpoints,
-root environment settings, React integration, demo accounts, and tests.
+From the repository root, start PostgreSQL and the backend in one terminal.
 
-Start Qwen in llama.cpp using the [local inference instructions](docs/frontend.md#local-qwen-inference).
+```sh
+docker compose up -d --wait postgres
+npm --prefix backend ci
+npm --prefix backend start
+```
 
-With the backend listening on `http://localhost:3000`, run these commands from the repository root:
+Start the frontend in a second terminal.
 
 ```sh
 npm --prefix frontend ci
 npm --prefix frontend run dev
 ```
 
-Open [CodeBridge AI locally](http://localhost:5173). See the [deployment guide and architecture diagram](docs/frontend.md#deployment) for separate frontend and API origins. The [migration notes](docs/migration-notes.md) and [pinned Q2A source analysis](docs/q2a-analysis.md) record the PHP comparison.
+Open [CodeBridge AI locally](http://localhost:5173). The frontend uses `http://localhost:3000/api/v1` in development. If the API runs elsewhere, set `VITE_API_BASE_URL` in `frontend/.env.local`. See the [authentication guide](docs/authentication.md#seed-the-course-demo-accounts) for disposable demo accounts.
+
+## Deployment
+
+The active deployment serves the frontend from Netlify and the Express API from Contabo using PM2 behind Caddy. PostgreSQL runs in Docker, and Express reaches llama.cpp privately. The full Docker Compose deployment is an optional alternative. See the [production runbook](docs/production.md) and [architecture diagram](docs/frontend.md#deployment).
 
 ## Verification
 
@@ -55,13 +62,13 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-Start PostgreSQL before running `test:postgres`. This suite verifies CodeBridge question CRUD against real PostgreSQL. See the [test setup](docs/authentication.md#run-tests) for connection and isolation details.
+Use a disposable PostgreSQL database for `test:postgres`. It verifies question CRUD, visibility rules, and administrator directory access. See the [test setup](docs/authentication.md#run-tests) for connection and isolation details.
 
 ## Features
 
 - Register, log in, and view, create, edit, or delete questions according to account permissions.
-- Search visible questions and filter by ownership.
+- Search visible questions and filter by ownership. Owners can hide their own questions. Administrators can view, reshow, and permanently delete hidden questions.
 - View account counts and the registered-user directory as an administrator.
 - Review Qwen-backed wording suggestions in the editor and AI Assistant.
 - Milestone 2 usage reporting requires additional backend endpoints.
-- Compare the migrated question features with the original Q2A application.
+- Compare current behavior with Q2A in the [migration notes](docs/migration-notes.md) and [historical source analysis](docs/q2a-analysis.md).

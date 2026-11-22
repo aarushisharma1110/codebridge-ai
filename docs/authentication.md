@@ -39,7 +39,7 @@ Example profile response from registration, login, and `/auth/me`:
 }
 ```
 
-Errors use a JSON object such as `{"message":"Invalid email or password"}`. Invalid registration input returns `400`, an existing email returns `409`, and invalid credentials or a missing, invalid, or expired session return `401`. An authenticated user without admin access receives `403` on the dashboard. A missing or mismatched `Origin` on a write also returns `403`. Unexpected database failures return a generic `500`.
+Errors use a JSON object such as `{"message":"Invalid email or password"}`. Invalid registration input returns `400`, an existing email returns `409`, and invalid credentials or a missing, invalid, or expired session return `401`. Both administrator endpoints return `403` to authenticated regular users. A missing or mismatched `Origin` on a write also returns `403`. Unexpected database failures return a generic `500`.
 
 ## React and API clients
 
@@ -76,7 +76,7 @@ Logout expires the browser cookie. The server does not track individual JWTs for
 
 ## Configure and run
 
-Follow [the database guide](database.md) for the existing Compose setup. Edit the root `.env` and keep it private.
+For local development, follow the [database guide](database.md) and keep the root `.env` private. Express reads it from the repository root, while Vite reads local frontend overrides from `frontend/.env.local`.
 
 | Variable | Purpose |
 | --- | --- |
@@ -92,15 +92,7 @@ Follow [the database guide](database.md) for the existing Compose setup. Edit th
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Copy the generated value into the root `.env` as `JWT_SECRET`. Then run from the repository root:
-
-```sh
-docker compose up -d --wait postgres
-npm --prefix backend ci
-npm --prefix backend start
-```
-
-See the [deployment guide](frontend.md#deployment) for HTTPS origins, cookie compatibility, and backend environment settings.
+Copy the generated value into the root `.env` as `JWT_SECRET`, then follow the [README quick start](../README.md#getting-started). See the [production runbook](production.md) for HTTPS origins, cookie compatibility, and backend environment settings.
 
 ## Seed the course demo accounts
 
@@ -110,7 +102,7 @@ See the [deployment guide](frontend.md#deployment) for HTTPS origins, cookie com
 npm --prefix backend run seed:demo
 ```
 
-The command reads the root `.env`. Running it again succeeds if both accounts match. If an existing account has one of the demo emails but a different password or role, the command rolls back without overwriting that account.
+The command reads the root `.env` and requires `DATABASE_URL`. It refuses to run with `NODE_ENV=production`. Verify that the URL points to a disposable database before using it. Running it again succeeds if both accounts match. If an existing account has one of the demo emails but a different password or role, the command rolls back without overwriting that account.
 
 ## Run tests
 
@@ -119,7 +111,7 @@ npm --prefix backend test
 npm --prefix backend run test:postgres
 ```
 
-`npm --prefix backend test` runs the mock-backed tests without PostgreSQL. For the integration suite, start PostgreSQL with `docker compose up -d --wait postgres` and configure the root `.env` as described in the [database guide](database.md). Set `TEST_DATABASE_URL` to target a separate test database if desired. Keep connection URLs in the environment or the ignored root `.env`.
+`npm --prefix backend test` runs the mock-backed tests without PostgreSQL. Before running the integration suite, start a disposable PostgreSQL database and set `TEST_DATABASE_URL` to its connection URL. If this variable is unset, the suite falls back to `DATABASE_URL`. Check the target before running the suite. Keep connection URLs in the environment or the ignored root `.env`.
 
 The PostgreSQL suite runs the existing Express app on a temporary loopback port, registers test accounts, logs in, and uses the issued session cookies to exercise question CRUD and the administrator user directory. It checks request validation, owner and admin permissions, origin checks, and the effect of successful and rejected requests on stored rows.
 

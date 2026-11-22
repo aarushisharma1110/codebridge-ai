@@ -208,10 +208,6 @@
     "invalidSession": "Invalid or expired session",
     "invalidRegistration": "Use a valid email and a password with at least 8 characters and at most 72 UTF-8 bytes",
     "emailRegistered": "Email already registered",
-    "invalidCredentials": "Invalid email or password",
-    "questionNotFound": "Question not found",
-    "questionNotOwner": "You can only change your own questions",
-    "questionInvalidInput": "Title must be %d-%d characters and body at most %d characters",
-    "questionInvalidUpdate": "Provide a title of %d-%d characters, a body of at most %d characters, or both"
+    "invalidCredentials": "Invalid email or password"
   }
 }

@@ -16,11 +16,11 @@ node --version
 npm --version
 ```
 
-Docker runs PostgreSQL only. The backend runs separately on your computer.
+The default `docker-compose.yml` runs PostgreSQL only. The backend runs separately on your computer. See the [production runbook](production.md) for the active VPS setup and the optional full Compose stack.
 
 ## 2. Add your settings
 
-Copy `.env.example` to `.env` in the main project folder. This file holds your local settings and passwords.
+Copy `.env.example` to `.env` in the main project folder. This private file holds local backend and PostgreSQL settings. Put an optional Vite API override in `frontend/.env.local` as described in the [frontend guide](frontend.md#run-locally).
 
 PowerShell (Windows):
 
@@ -41,7 +41,7 @@ PORT=3000
 POSTGRES_USER=codebridge
 POSTGRES_PASSWORD=choose_a_local_password
 POSTGRES_DB=codebridge_ai
-DATABASE_URL=postgresql://codebridge:choose_a_local_password@localhost:5433/codebridge_ai
+DATABASE_URL=postgresql://codebridge:choose_a_local_password@127.0.0.1:5433/codebridge_ai
 ```
 
 Replace `choose_a_local_password` in both places with the same password. Use letters and numbers to avoid extra formatting in the connection address. Keep `POSTGRES_USER` and `POSTGRES_DB` as shown so Docker can check that the database is ready.
@@ -86,22 +86,21 @@ If you use an app such as pgAdmin or DBeaver to view the database, enter:
 
 | Setting | Value |
 | --- | --- |
-| Host | `localhost` |
+| Host | `127.0.0.1` |
 | Port | `5433` |
 | Database | `codebridge_ai` |
 | Username | `codebridge` |
 | Password | Your `POSTGRES_PASSWORD` from `.env` |
 
-Use port **5433** to connect from your computer.
+Connect from the machine running Docker. The Compose mapping binds PostgreSQL to IPv4 loopback on port **5433**.
 
 ## 5. Check the backend connection
 
-From the main project folder:
+Start the backend from the main project folder if it is not already running.
 
 ```sh
-cd backend
-npm ci
-node server.js
+npm --prefix backend ci
+npm --prefix backend start
 ```
 
 Leave the server running and open [this test link](http://localhost:3000/api/v1/db-test) in your browser. If you changed `PORT`, use that port instead. If everything works, you will see:
@@ -113,7 +112,7 @@ Leave the server running and open [this test link](http://localhost:3000/api/v1/
 }
 ```
 
-The backend reads your `.env` settings automatically. Stop it with `Ctrl+C` when finished. Run `cd ..` to return to the main project folder before using the commands below.
+The backend reads the root `.env` automatically. Stop it with `Ctrl+C` when finished. This diagnostic is available in development. The production entry point disables it and still serves `/api/v1/health`.
 
 ## Everyday commands
 
@@ -142,7 +141,7 @@ docker compose up -d postgres
 ## Common problems
 
 - **Docker is not running:** Start Docker Desktop, wait for it to finish starting, then retry.
-- **Port 5433 is already in use:** Another program is using that port. Stop that program, or change `5433` in `5433:5432` in `docker-compose.yml` to an unused port. Use the same new port in `DATABASE_URL` and your database app.
+- **Port 5433 is already in use:** Another program is using that port. Stop that program or, for a local setup, change the host port in `127.0.0.1:5433:5432` to an unused port. Keep the loopback address and container port `5432`. Use the new host port in `DATABASE_URL` and your database app.
 - **Password authentication failed:** Check that the passwords in `.env` match. If you have already created the database, it still uses the original password. Use that password, or follow the steps above to start over if you no longer need the data.
-- **Database connection failed in the backend:** Check that Docker shows `healthy`, `.env` is in the main project folder, and `DATABASE_URL` uses `localhost:5433`. Restart the backend after editing `.env`.
+- **Database connection failed in the backend:** Check that Docker shows `healthy`, `.env` is in the main project folder, and `DATABASE_URL` points to the loopback address and published host port. Restart the local backend after editing `.env`.
 - **Tables are missing:** Make sure you connected to `codebridge_ai`. If the database was created before the tables were added, run the missing SQL from `backend/db/schema.sql` in the database terminal, or follow the steps above to start over.

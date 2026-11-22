@@ -121,13 +121,55 @@ describe('session and authorization', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('shows administrator navigation, real totals, and unavailable analytics', async () => {
-    start('/admin', { account: admin, routes: { 'GET /admin/dashboard': () => json({ users: 12, admins: 2 }) } })
+  it('keeps administrator totals visible when an older API is missing the directory route', async () => {
+    start('/admin', {
+      account: admin,
+      routes: {
+        'GET /admin/dashboard': () => json({ users: 12, admins: 2 }),
+        'GET /admin/users': () => new Response(null, { status: 404 }),
+      },
+    })
     await screen.findByRole('heading', { name: 'Administration' })
     expect(screen.getByRole('link', { name: 'Administration' })).toBeTruthy()
     expect(await screen.findByText('12')).toBeTruthy()
     expect(await screen.findByText('The registered-user directory is unavailable.')).toBeTruthy()
     expect(await screen.findByText('Endpoint usage data is unavailable.')).toBeTruthy()
+  })
+
+  it('shows registered users and combines email and role filters', async () => {
+    const administrator = { id: 2, email: 'admin@example.com', role: 'admin', created_at: '2026-02-05T16:30:00.000Z' }
+    const reader = { id: 3, email: 'reader@example.org', role: 'user', created_at: '2026-02-08T09:15:00.000Z' }
+    const directory = vi.fn(() => json({ users: [member, administrator, reader] }))
+    const { user } = start('/admin', {
+      account: administrator,
+      routes: {
+        'GET /admin/dashboard': () => json({ users: 2, admins: 1 }),
+        'GET /admin/users': directory,
+      },
+    })
+
+    const table = await screen.findByRole('table', { name: 'Registered users' })
+    expect(directory).toHaveBeenCalledWith(expect.objectContaining({ method: 'GET', credentials: 'include' }))
+    const memberRow = within(table).getByRole('row', { name: /member@example\.com/ })
+    const adminRow = within(table).getByRole('row', { name: /admin@example\.com/ })
+    expect(within(table).getAllByRole('row')).toHaveLength(4)
+    expect(within(memberRow).getByRole('cell', { name: 'Member' })).toBeTruthy()
+    expect(within(adminRow).getByRole('cell', { name: 'Administrator' })).toBeTruthy()
+    expect(adminRow.querySelector('time')?.dateTime).toBe(administrator.created_at)
+    expect(within(adminRow).getByRole('cell', { name: 'Unavailable' })).toBeTruthy()
+
+    const emailFilter = screen.getByRole('searchbox', { name: 'Filter by email' })
+    const roleFilter = screen.getByRole('combobox', { name: 'Role' })
+    await user.type(emailFilter, 'EXAMPLE.COM')
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+    expect(within(table).queryByRole('cell', { name: reader.email })).toBeNull()
+    await user.selectOptions(roleFilter, 'admin')
+    expect(within(table).getAllByRole('row')).toHaveLength(2)
+    expect(within(table).getByRole('cell', { name: administrator.email })).toBeTruthy()
+    expect(within(table).queryByRole('cell', { name: member.email })).toBeNull()
+    await user.type(emailFilter, '.invalid')
+    expect(screen.queryByRole('table', { name: 'Registered users' })).toBeNull()
+    expect(screen.getByText('No accounts match your filters.')).toBeTruthy()
   })
 
   it('prompts for a new login when a protected request receives 401', async () => {
