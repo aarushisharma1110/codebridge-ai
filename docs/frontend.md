@@ -77,13 +77,15 @@ The Milestone 1 directory response contains account IDs, emails, roles, and crea
 
 ## Local Qwen inference
 
-Start `llama-server` with your existing Qwen2.5-3B-Instruct GGUF file. On Windows, invoke `llama-server.exe` from its installation directory or add it to your PATH. The alias in this example matches CodeBridge's default model ID. See the [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) for server options.
+1. Download and extract a llama.cpp build for your OS and CPU architecture. The CPU build is sufficient. Run `llama-server` from the extracted directory as `./llama-server` on macOS/Linux or `.\llama-server.exe` in PowerShell, or add the directory to your `PATH` to use the command below. [Official llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases)
+2. Download Qwen's `qwen2.5-3b-instruct-q4_k_m.gguf` file (about 2.1 GB) to a directory outside the project. [Official Q4_K_M model download](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/blob/main/qwen2.5-3b-instruct-q4_k_m.gguf)
+3. Start the server with the full downloaded model path. Leave this terminal running. The alias matches CodeBridge's default model ID. [llama.cpp server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 
 ```sh
-llama-server -m "/path/to/Qwen2.5-3B-Instruct-Q4_K_M.gguf" --host 127.0.0.1 --port 8080 --alias "Qwen/Qwen2.5-3B-Instruct-GGUF:Q4_K_M"
+llama-server -m "/path/to/qwen2.5-3b-instruct-q4_k_m.gguf" --host 127.0.0.1 --port 8080 --alias "Qwen/Qwen2.5-3B-Instruct-GGUF:Q4_K_M"
 ```
 
-Check `curl http://127.0.0.1:8080/v1/models`. If your server is already running, use the model ID it reports.
+Open [the local model endpoint](http://127.0.0.1:8080/v1/models) and confirm that `data[0].id` matches `AI_MODEL` in the root `.env`. If using a different llama.cpp port or model ID, update the corresponding variables and restart Express.
 
 | Backend variable | Default and purpose |
 | --- | --- |
@@ -97,16 +99,13 @@ The endpoint returns 400 for invalid input, 401 for an invalid or missing sessio
 
 To verify real inference, start llama.cpp, PostgreSQL, Express, and Vite, then sign in and enter `why my api returns 404` as a new question title. Select **Improve with AI** and check that the comparison contains a rewrite and the draft only changes after acceptance. Keep llama.cpp on loopback for this setup. A deployed Express service needs its own private network path to llama.cpp, and the deployment request timeout must allow for the configured inference timeout.
 
-## Remaining Milestone 2 integration
+## Milestone 2 consumption reporting
 
-The following interfaces are proposed contracts. Update the corresponding functions in `frontend/src/services/api.js` if the backend adopts different paths or shapes. Missing routes (HTTP 404, 405, or 501) produce unavailable states. Transient API or network errors offer a retry.
+`GET /usage` requires a session and returns `totalUsage`, `freeAllowance: 20`, `remainingCalls`, `limitExceeded`, `allowanceExhausted`, and `breakdown` rows (`method`, `endpoint`, `count`, `errorCount`). Compatibility aliases `total` and `threshold` are also returned.
 
-| Endpoint | Proposed JSON contract |
-| --- | --- |
-| `GET /usage` | Return `{ total, threshold, breakdown? }`. The optional breakdown contains `{ method, endpoint, count, errorCount? }` rows. |
-| `GET /admin/usage` | Return `{ byUser: [{ user_id, email, count }], byEndpoint: [{ method, endpoint, count, errorCount? }] }`. |
+`GET /admin/usage` requires administrator authorization and returns `byUser` (`user_id`, `email`, `count`, including zero-use accounts) and `byEndpoint` (`method`, `endpoint`, `count`, `errorCount`).
 
-These endpoints require a session. The administrator usage endpoint also requires administrator authorization. The database schema includes `api_usage`. Backend request tracking and reporting still need implementation. The intended notice threshold is 20 eligible requests. Requests continue after the threshold. Registration, login, logout, documentation, and CORS preflight are excluded.
+The existing layout loads consumption after login/session restoration and refreshes it after question and AI responses, including failed requests and empty 204 responses. The usage page loads the full breakdown. Counts and remaining allowance come from PostgreSQL; the browser does not increment a counter. See [consumption policy and verification](api-usage.md).
 
 ## Build and test
 

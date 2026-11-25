@@ -34,10 +34,10 @@ function parseId(value) {
     return id <= MAX_ID ? id : null;
 }
 
-function createQuestionsRouter(pool, requireAuth) {
+function createQuestionsRouter(pool, requireAuth, trackApiUsage) {
     const router = express.Router();
 
-    router.get('/', requireAuth, async (req, res) => {
+    router.get('/', requireAuth, trackApiUsage, async (req, res) => {
         const { rows } = await pool.query(
             `SELECT ${QUESTION_COLUMNS}
              FROM questions
@@ -47,7 +47,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ questions: rows });
     });
 
-    router.get('/hidden', requireAuth, requireAdmin, async (req, res) => {
+    router.get('/hidden', requireAuth, trackApiUsage, requireAdmin, async (req, res) => {
         const { rows } = await pool.query(
             `SELECT ${QUESTION_COLUMNS}
              FROM questions
@@ -57,7 +57,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ questions: rows });
     });
 
-    router.get('/:id', requireAuth, async (req, res) => {
+    router.get('/:id', requireAuth, trackApiUsage, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
@@ -74,7 +74,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ question: rows[0] });
     });
 
-    router.post('/', requireAuth, async (req, res) => {
+    router.post('/', requireAuth, trackApiUsage, async (req, res) => {
         const input = req.body || {};
         const title = cleanTitle(input.title);
         const body = cleanBody(input.body === undefined ? '' : input.body);
@@ -91,7 +91,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.status(201).json({ question: rows[0] });
     });
 
-    router.patch('/:id', requireAuth, async (req, res) => {
+    router.patch('/:id', requireAuth, trackApiUsage, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
@@ -133,7 +133,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ question: rows[0] });
     });
 
-    router.post('/:id/hide', requireAuth, async (req, res) => {
+    router.post('/:id/hide', requireAuth, trackApiUsage, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
@@ -158,7 +158,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ question: result.rows[0] });
     });
 
-    router.post('/:id/reshow', requireAuth, requireAdmin, async (req, res) => {
+    router.post('/:id/reshow', requireAuth, trackApiUsage, requireAdmin, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 
@@ -177,7 +177,7 @@ function createQuestionsRouter(pool, requireAuth) {
         res.json({ question });
     });
 
-    router.delete('/:id', requireAuth, async (req, res) => {
+    router.delete('/:id', requireAuth, trackApiUsage, async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(404).json({ message: messages.questions.notFound });
 

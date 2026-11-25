@@ -1,4 +1,4 @@
-const express = require('express');
+    const express = require('express');
 const bcrypt = require('bcrypt');
 const { BCRYPT_ROUNDS, normalizeEmail, validPassword } = require('../auth/credentials');
 const messages = require('../../lang/message/en/messages.json');

@@ -10,6 +10,7 @@ const secret = randomBytes(32).toString('hex');
 const user = { id: 7, email: 'tester@example.test', role: 'user' };
 const pool = {
     async query(_sql, ids) {
+        if (_sql.includes('INSERT INTO api_usage')) return { rows: [] };
         assert.deepEqual(ids, [user.id]);
         return { rows: [user] };
     }

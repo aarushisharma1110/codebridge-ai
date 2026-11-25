@@ -21,6 +21,18 @@ function createAdminRouter(pool, requireAuth) {
         res.json({ users: rows });
     });
 
+    router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
+        const { rows: byUser } = await pool.query(`
+            SELECT u.id AS user_id, u.email, COUNT(a.id)::int AS count
+            FROM users u LEFT JOIN api_usage a ON a.user_id = u.id
+            GROUP BY u.id, u.email ORDER BY u.id`);
+        const { rows: byEndpoint } = await pool.query(`
+            SELECT method, route_template AS endpoint, COUNT(*)::int AS count,
+                   COUNT(*) FILTER (WHERE status_code >= 400)::int AS "errorCount"
+            FROM api_usage GROUP BY method, route_template ORDER BY method, route_template`);
+        res.json({ byUser, byEndpoint });
+    });
+
     return router;
 }
 

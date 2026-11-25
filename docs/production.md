@@ -190,3 +190,9 @@ curl -fsSi -X OPTIONS "https://api.$site_domain/api/v1/auth/login" \
 Expect a `204` preflight with `Access-Control-Allow-Origin` set to the frontend origin and `Access-Control-Allow-Credentials: true`. In a browser, register and sign in using the frontend. Confirm login returns the API cookie with the listed attributes, reload and verify `/auth/me` succeeds, create and edit a test question, request a real AI suggestion, then sign out and confirm `/auth/me` returns `401`. Check `prod ps` for the published ports and confirm ports 3000, 5432 and 8080 are unreachable from outside the VPS.
 
 Before opening this deployment to unrestricted users, decide how to handle abuse. The current application permits public registration, and the authenticated AI route has no per-user inference quota. Usage reporting still depends on unimplemented API routes.
+
+## Hosted OpenAPI documentation
+
+The backend serves Swagger UI at `/doc/` and its specification at `/doc/openapi.json`. Forward `/doc` and `/doc/*` through the active API-host Caddy configuration to the same Express process, preserving the path. The optional Compose Caddyfile already includes those paths; it does not update the external PM2 host automatically. Restart Express after installing the locked dependencies and deploying the documentation files. Verify `https://codebridge-api.duckdns.org/doc/` and all local CSS/JS assets after deployment.
+
+The specification omits `/db-test` when diagnostics are disabled. API-origin Swagger writes remain subject to the existing frontend-only Origin policy and return 403; documentation must not weaken that policy. See [documentation verification and browser-cookie limitations](api-documentation.md).

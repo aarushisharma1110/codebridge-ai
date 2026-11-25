@@ -40,15 +40,15 @@ export function UsagePage() {
         if (!usage) return <EmptyState icon={Activity} title={messages.analytics.usageUnavailable}>
           {messages.analytics.noticeExplanation}
         </EmptyState>
-        const remaining = Math.max(0, usage.threshold - usage.total)
+        const remaining = usage.remainingCalls
         return <>
           <dl className="metrics">
-            <div><dt>{messages.analytics.eligibleCalls}</dt><dd>{formatCount(usage.total)}</dd></div>
-            <div><dt>{messages.analytics.threshold}</dt><dd>{formatCount(usage.threshold)}</dd></div>
+            <div><dt>{messages.analytics.eligibleCalls}</dt><dd>{formatCount(usage.totalUsage)}</dd></div>
+            <div><dt>{messages.analytics.threshold}</dt><dd>{formatCount(usage.freeAllowance)}</dd></div>
             <div><dt>{messages.analytics.callsBeforeNotice}</dt><dd>{formatCount(remaining)}</dd></div>
           </dl>
-          <progress aria-label={messages.analytics.progress} value={Math.min(usage.total, usage.threshold)}
-            max={usage.threshold} />
+          <progress aria-label={messages.analytics.progress} value={Math.min(usage.totalUsage, usage.freeAllowance)}
+            max={usage.freeAllowance} />
           {remaining === 0 && <Notice>{messages.analytics.thresholdReached}</Notice>}
         </>
       }}</Resource>
@@ -87,18 +87,18 @@ export function AdminPage() {
               <option value="all">{messages.analytics.allRoles}</option><option value="user">{messages.common.member}</option><option value="admin">{messages.common.admin}</option>
             </select></label>
           </div>
-          <Table label={messages.analytics.registeredUsers} columns={[messages.common.email, messages.common.role, messages.common.created, messages.analytics.eligibleCalls]}
+          <Table label={messages.analytics.registeredUsers} columns={[messages.common.email, messages.common.role, messages.common.created]}
             empty={data.users.length ? messages.analytics.noMatchingAccounts : messages.analytics.noAccounts}
             rows={rows.map((user) => [user.id, user.email, user.role === 'admin' ? messages.common.admin : messages.common.member,
-              <DateValue value={user.created_at} />, user.api_calls == null ? messages.common.unavailable : formatCount(user.api_calls)])} />
+              <DateValue value={user.created_at} />])} />
         </>
       }}</Resource>
     </section>
     <Resource state={usage} label={messages.analytics.adminUsageResource}>{(data) => <>
       <section className="panel analytics-block">
         <h2>{messages.analytics.usageByUser}</h2>
-        {data ? <Table label={messages.analytics.usageByUser} columns={[messages.common.email, messages.analytics.eligibleCalls]}
-          rows={data.byUser.map((row) => [row.user_id, row.email, formatCount(row.count)])} />
+        {data ? <Table label={messages.analytics.usageByUser} columns={[messages.analytics.user, messages.common.email, messages.analytics.eligibleCalls]}
+          rows={data.byUser.map((row) => [row.user_id, row.user_id, row.email, formatCount(row.count)])} />
           : <p className="table-empty">{messages.analytics.perUserUnavailable}</p>}
       </section>
       <section className="panel analytics-block">

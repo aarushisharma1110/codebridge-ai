@@ -10,6 +10,7 @@ const isQuestion = (question) => question && isCount(question.id) && isCount(que
 const isQuestionList = (items) => Array.isArray(items) && items.every((item) => isQuestion(item) && !item.hidden)
 const isHiddenQuestion = (question) => isQuestion(question) && question.hidden === true
 let sessionVersion = 0
+export const USAGE_CHANGED = 'codebridge:usage-changed'
 export const SESSION_EXPIRED = 'codebridge:session-expired'
 
 export class ApiError extends Error {
@@ -39,6 +40,9 @@ async function request(path, { method = 'GET', body, signal, session = true } = 
     throw new ApiError(error.name === 'TimeoutError'
       ? messages.client.timeout
       : messages.client.networkError)
+  }
+  if (version === sessionVersion && /^\/(questions(?:\/|$)|ai(?:\/|$))/.test(path)) {
+    window.dispatchEvent(new Event(USAGE_CHANGED))
   }
   if (response.status === 204) return undefined
 
@@ -128,8 +132,9 @@ export async function improveQuestion(question) {
 }
 
 export function getUsage(signal) {
-  return optional('/usage', { signal }, ({ total, threshold, breakdown }) =>
-    isCount(total) && isCount(threshold) && threshold > 0 &&
+  return optional('/usage', { signal }, ({ totalUsage, freeAllowance, remainingCalls, limitExceeded, allowanceExhausted, breakdown }) =>
+    isCount(totalUsage) && freeAllowance === 20 && isCount(remainingCalls) &&
+    typeof limitExceeded === 'boolean' && typeof allowanceExhausted === 'boolean' &&
     (breakdown === undefined || (Array.isArray(breakdown) && breakdown.every(isUsageRow))))
 }
 

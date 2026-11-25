@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Activity, FileText, Menu, Shield, Sparkles, X } from 'lucide-react'
+import { getUsage, USAGE_CHANGED } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { DateValue, Notice, PageHeading } from './ui'
 import messages from '../../../lang/message/en/messages.json'
@@ -50,10 +51,36 @@ function Navigation() {
 }
 
 export function Layout() {
+  const { user } = useAuth()
+  const { pathname } = useLocation()
+  const [usage, setUsage] = useState(null)
+  const [usageError, setUsageError] = useState('')
+  useEffect(() => {
+    let latest = 0
+    const controller = new AbortController()
+    function refresh() {
+      const version = ++latest
+      getUsage(controller.signal).then((value) => {
+        if (!controller.signal.aborted && version === latest) { setUsage(value); setUsageError('') }
+      }).catch((error) => {
+        if (!controller.signal.aborted && version === latest) setUsageError(error.message)
+      })
+    }
+    setUsage(null)
+    setUsageError('')
+    if (pathname === '/usage') return () => controller.abort()
+    refresh()
+    window.addEventListener(USAGE_CHANGED, refresh)
+    return () => { controller.abort(); window.removeEventListener(USAGE_CHANGED, refresh) }
+  }, [user.id, pathname])
   return <>
     <a className="skip-link" href="#main">{messages.layout.skip}</a>
     <Navigation />
-    <main className="workspace" id="main" tabIndex={-1}><Outlet /></main>
+    <main className="workspace" id="main" tabIndex={-1}>
+      {usage?.allowanceExhausted && <Notice>{messages.analytics.thresholdReached}</Notice>}
+      {usageError && <Notice kind="error">{usageError}</Notice>}
+      <Outlet />
+    </main>
   </>
 }
 

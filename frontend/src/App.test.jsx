@@ -118,7 +118,7 @@ describe('session and authorization', () => {
     const { fetch } = start('/admin')
     await screen.findByRole('heading', { name: 'Administrator access required' })
     expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull()
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls.filter(([url]) => !url.endsWith('/usage'))).toHaveLength(1)
   })
 
   it('keeps administrator totals visible when an older API is missing the directory route', async () => {
@@ -156,7 +156,7 @@ describe('session and authorization', () => {
     expect(within(memberRow).getByRole('cell', { name: 'Member' })).toBeTruthy()
     expect(within(adminRow).getByRole('cell', { name: 'Administrator' })).toBeTruthy()
     expect(adminRow.querySelector('time')?.dateTime).toBe(administrator.created_at)
-    expect(within(adminRow).getByRole('cell', { name: 'Unavailable' })).toBeTruthy()
+    expect(within(adminRow).queryByRole('cell', { name: 'Unavailable' })).toBeNull()
 
     const emailFilter = screen.getByRole('searchbox', { name: 'Filter by email' })
     const roleFilter = screen.getByRole('combobox', { name: 'Role' })
@@ -353,11 +353,11 @@ describe('assistant and usage', () => {
   })
 
   it('caps progress and shows a non-blocking notice above the threshold', async () => {
-    start('/usage', { routes: { 'GET /usage': () => json({ total: 24, threshold: 20 }) } })
+    start('/usage', { routes: { 'GET /usage': () => json({ totalUsage: 24, freeAllowance: 20, remainingCalls: 0, limitExceeded: true, allowanceExhausted: true }) } })
     const progress = await screen.findByRole('progressbar')
     expect(progress.value).toBe(20)
     expect(screen.getByText('24')).toBeTruthy()
-    expect(screen.getByText('You’ve reached the usage notice threshold. You can continue using the API.')).toBeTruthy()
+    expect(screen.getByText('You have used all 20 free API calls. Your service will continue, but your free allowance has been exhausted.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'My Questions' })).toBeTruthy()
   })
 
@@ -369,5 +369,29 @@ describe('assistant and usage', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     await screen.findByRole('heading', { name: 'Usage data is unavailable' })
     await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull())
+  })
+})
+
+describe('live consumption display', () => {
+  const usageData = (totalUsage) => ({ totalUsage, freeAllowance: 20,
+    remainingCalls: Math.max(0, 20 - totalUsage), limitExceeded: totalUsage > 20,
+    allowanceExhausted: totalUsage >= 20, breakdown: [] })
+
+  it('keeps counts on the usage page and refreshes the warning after AI at 20 and 21 calls', async () => {
+    let total = 19
+    const { user } = start('/assistant', { routes: {
+      'GET /usage': () => json(usageData(total)),
+      [improveRoute]: () => { total++; return json({ improvedQuestion: suggestion }) },
+    } })
+    await screen.findByRole('heading', { name: 'AI Assistant' })
+    expect(screen.queryByText(/Eligible calls:/)).toBeNull()
+    await user.type(screen.getByLabelText('Question title'), 'why my api fails')
+    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
+    await screen.findByText('You have used all 20 free API calls. Your service will continue, but your free allowance has been exhausted.')
+    expect(screen.queryByText(/Eligible calls:/)).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Keep original' }))
+    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
+    await screen.findByRole('button', { name: 'Keep original' })
+    expect(total).toBe(21)
   })
 })

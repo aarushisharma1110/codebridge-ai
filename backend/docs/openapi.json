@@ -1,0 +1,2341 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CodeBridge AI API",
+    "version": "1.0.0",
+    "description": "CodeBridge AI is a RESTful API for user authentication, question management, AI-assisted question improvement, API consumption tracking, and administration.\n\n**API Version:** v1 (`/api/v1`)\n\n**Authentication:** Protected endpoints require a JWT stored in an HttpOnly cookie. Log in through the client application before testing protected endpoints.\n\n**Testing:** Read requests can be tested through Swagger. Write operations must be performed through the configured client application."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "CodeBridge AI API v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication"
+    },
+    {
+      "name": "Account"
+    },
+    {
+      "name": "Questions"
+    },
+    {
+      "name": "AI"
+    },
+    {
+      "name": "Consumption"
+    },
+    {
+      "name": "Administration"
+    },
+    {
+      "name": "Diagnostics"
+    }
+  ],
+  "security": [
+    {
+      "cookieAuth": []
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "operationId": "register",
+        "summary": "Register a regular user",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Creates a regular account. Does not log in or set a cookie. Supplied role and ID cannot grant privileges.",
+        "responses": {
+          "201": {
+            "description": "Register a regular user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": 1,
+                    "email": "member@example.test",
+                    "role": "user",
+                    "created_at": "2026-11-24T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Use a valid email and a password with at least 8 characters and at most 72 UTF-8 bytes"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: role/ownership restriction, or missing/mismatched Origin on writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request origin is not allowed"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Normalized email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Email already registered"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Registration"
+              },
+              "example": {
+                "email": "member@example.test",
+                "password": "example-passphrase"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "login",
+        "summary": "Log in and set the session cookie",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "Sets codebridge_session through Set-Cookie (not a token in JSON). Generic error for wrong passwords and unknown accounts. Browser Origin must equal configured CLIENT_ORIGIN; API-hosted Swagger UI writes are denied under the normal separate-origin configuration.",
+        "responses": {
+          "200": {
+            "description": "Log in and set the session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": 1,
+                    "email": "member@example.test",
+                    "role": "user",
+                    "created_at": "2026-11-24T12:00:00.000Z"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "HttpOnly host-only cookie; Path=/api/v1; Max-Age=3600. Secure in production; SameSite=Lax locally/same-site or None with Secure for separate sites. Browser manages it; do not paste JWTs into Authorize.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid JSON body"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: role/ownership restriction, or missing/mismatched Origin on writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request origin is not allowed"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid email or password"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              },
+              "example": {
+                "email": "member@example.test",
+                "password": "example-passphrase"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "currentUser",
+        "summary": "Read the authenticated account",
+        "tags": [
+          "Account"
+        ],
+        "description": "Returns only the current account. There is no account update/delete or arbitrary-user profile endpoint. No query parameters are supported.",
+        "responses": {
+          "200": {
+            "description": "Read the authenticated account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": 1,
+                    "email": "member@example.test",
+                    "role": "user",
+                    "created_at": "2026-11-24T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "summary": "Clear the browser session cookie",
+        "tags": [
+          "Authentication"
+        ],
+        "description": "No request body. Expires the session cookie with matching path and attributes. No session is required. Copied unexpired JWTs are not revoked server-side. Requires allowed Origin.",
+        "responses": {
+          "204": {
+            "description": "Clear the browser session cookie",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Expires codebridge_session at Path=/api/v1.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid JSON body"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: role/ownership restriction, or missing/mismatched Origin on writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request origin is not allowed"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/questions": {
+      "get": {
+        "operationId": "listQuestions",
+        "summary": "List visible questions",
+        "tags": [
+          "Questions"
+        ],
+        "description": "All signed-in users can read shared visible questions. No backend query parameters, pagination or server-side search; frontend filters locally.",
+        "responses": {
+          "200": {
+            "description": "List visible questions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionList"
+                },
+                "example": {
+                  "questions": [
+                    {
+                      "id": 12,
+                      "user_id": 1,
+                      "title": "How do I handle API errors?",
+                      "body": "I am using React.",
+                      "created_at": "2026-11-24T12:00:00.000Z",
+                      "updated_at": "2026-11-24T12:00:00.000Z",
+                      "last_edited_by": null,
+                      "hidden": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createQuestion",
+        "summary": "Create a question",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Owner comes only from the session. Ignores supplied user_id, role and other noneditable fields. Body may be omitted and defaults to an empty string.",
+        "responses": {
+          "201": {
+            "description": "Create a question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponse"
+                },
+                "example": {
+                  "question": {
+                    "id": 12,
+                    "user_id": 1,
+                    "title": "How do I handle API errors?",
+                    "body": "I am using React.",
+                    "created_at": "2026-11-24T12:00:00.000Z",
+                    "updated_at": "2026-11-24T12:00:00.000Z",
+                    "last_edited_by": null,
+                    "hidden": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid question input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Title must be 12-120 characters and body at most 12000 characters"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: role/ownership restriction, or missing/mismatched Origin on writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request origin is not allowed"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateQuestion"
+              },
+              "example": {
+                "title": "How do I handle API errors?",
+                "body": "I am using React."
+              }
+            }
+          }
+        }
+      }
+    },
+    "/questions/hidden": {
+      "get": {
+        "operationId": "listHiddenQuestions",
+        "summary": "List hidden questions (administrator)",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Administrator only. Regular users, including owners, cannot read hidden questions.",
+        "responses": {
+          "200": {
+            "description": "List hidden questions (administrator)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionList"
+                },
+                "example": {
+                  "questions": [
+                    {
+                      "id": 12,
+                      "user_id": 1,
+                      "title": "How do I handle API errors?",
+                      "body": "I am using React.",
+                      "created_at": "2026-11-24T12:00:00.000Z",
+                      "updated_at": "2026-11-24T12:00:00.000Z",
+                      "last_edited_by": 2,
+                      "hidden": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Administrator access required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/questions/{id}": {
+      "get": {
+        "operationId": "getQuestion",
+        "summary": "Read a question",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Read a question",
+        "responses": {
+          "200": {
+            "description": "Read a question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponse"
+                },
+                "example": {
+                  "question": {
+                    "id": 12,
+                    "user_id": 1,
+                    "title": "How do I handle API errors?",
+                    "body": "I am using React.",
+                    "created_at": "2026-11-24T12:00:00.000Z",
+                    "updated_at": "2026-11-24T12:00:00.000Z",
+                    "last_edited_by": null,
+                    "hidden": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Question missing or invalid ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Question not found"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Hidden question requires administrator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "This question is hidden."
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Positive canonical decimal ID, 1-2147483647. Invalid IDs return 404.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "example": 12
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "updateQuestion",
+        "summary": "Edit a visible question",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Owner or administrator may edit visible questions. Hidden questions return 403 for regular users and 409 for admin (with valid input). Omitted fields remain unchanged. Only title/body are editable; supplied user_id cannot change ownership.",
+        "responses": {
+          "200": {
+            "description": "Edit a visible question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponse"
+                },
+                "example": {
+                  "question": {
+                    "id": 12,
+                    "user_id": 1,
+                    "title": "How do I handle API errors?",
+                    "body": "I am using React.",
+                    "created_at": "2026-11-24T12:00:00.000Z",
+                    "updated_at": "2026-11-24T12:00:00.000Z",
+                    "last_edited_by": 1,
+                    "hidden": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No editable fields or invalid title/body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Provide a title of 12-120 characters, a body of at most 12000 characters, or both"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not owner, hidden question, or disallowed write Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only change your own questions"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Question missing or invalid ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Question not found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator attempted to edit a hidden question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Reshow this question before editing it."
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateQuestion"
+              },
+              "example": {
+                "body": "Updated context."
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Positive canonical decimal ID, 1-2147483647. Invalid IDs return 404.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "example": 12
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteQuestion",
+        "summary": "Delete a question",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Owner can delete a visible question; an administrator can delete a hidden question. Administrators cannot delete another user's visible question. No request body. Success has no JSON content.",
+        "responses": {
+          "204": {
+            "description": "Delete a question"
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid JSON body"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not owner, hidden question, or disallowed write Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only change your own questions"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Question missing or invalid ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Question not found"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Positive canonical decimal ID, 1-2147483647. Invalid IDs return 404.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "example": 12
+          }
+        ]
+      }
+    },
+    "/questions/{id}/hide": {
+      "post": {
+        "operationId": "hideQuestion",
+        "summary": "Hide a visible question",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Owner or administrator. Regular owner gets 204 with no JSON; administrator gets 200 with question. An already-hidden resource is 403 for a regular user. No request body.",
+        "responses": {
+          "204": {
+            "description": "Hide a visible question"
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid JSON body"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not owner, hidden question, or disallowed write Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only change your own questions"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Administrator receives the hidden question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponse"
+                },
+                "example": {
+                  "question": {
+                    "id": 12,
+                    "user_id": 1,
+                    "title": "How do I handle API errors?",
+                    "body": "I am using React.",
+                    "created_at": "2026-11-24T12:00:00.000Z",
+                    "updated_at": "2026-11-24T12:00:00.000Z",
+                    "last_edited_by": 2,
+                    "hidden": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Question missing or invalid ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Question not found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already hidden (administrator) or concurrent hide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "This question is already hidden."
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Positive canonical decimal ID, 1-2147483647. Invalid IDs return 404.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "example": 12
+          }
+        ]
+      }
+    },
+    "/questions/{id}/reshow": {
+      "post": {
+        "operationId": "reshowQuestion",
+        "summary": "Reshow a hidden question (administrator)",
+        "tags": [
+          "Questions"
+        ],
+        "description": "Administrator only. No request body.",
+        "responses": {
+          "200": {
+            "description": "Reshow a hidden question (administrator)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponse"
+                },
+                "example": {
+                  "question": {
+                    "id": 12,
+                    "user_id": 1,
+                    "title": "How do I handle API errors?",
+                    "body": "I am using React.",
+                    "created_at": "2026-11-24T12:00:00.000Z",
+                    "updated_at": "2026-11-24T12:00:00.000Z",
+                    "last_edited_by": 2,
+                    "hidden": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Invalid JSON body"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator required or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Administrator access required"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Question missing or invalid ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Question not found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Question is already visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "This question is already visible."
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Positive canonical decimal ID, 1-2147483647. Invalid IDs return 404.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "example": 12
+          }
+        ]
+      }
+    },
+    "/ai/improve-question": {
+      "post": {
+        "operationId": "improveQuestion",
+        "summary": "Suggest improved question wording",
+        "tags": [
+          "AI"
+        ],
+        "description": "Returns untrusted text for user review. Does not save a question, run commands, or grant authorization. Any later save requires ordinary validation and authorization.",
+        "responses": {
+          "200": {
+            "description": "Suggest improved question wording",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Improvement"
+                },
+                "example": {
+                  "improvedQuestion": "Why does my API return a 404, and what should I check?"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Enter a question between 1 and 2,000 characters."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: role/ownership restriction, or missing/mismatched Origin on writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request origin is not allowed"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Request body is too large"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported encoding or character set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Unsupported request encoding"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Invalid/incomplete upstream output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "AI returned an invalid or incomplete suggestion. Please try again."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Model unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "AI improvement is temporarily unavailable. Please try again."
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Model timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "AI took too long to respond. Please try again."
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImproveInput"
+              },
+              "example": {
+                "question": "why my api returns 404"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "summary": "Read current user API consumption",
+        "tags": [
+          "Consumption"
+        ],
+        "description": "Session-scoped; no user ID/query parameter. Newly registered users start at totalUsage=0 and remainingCalls=20. At 20: allowanceExhausted=true, limitExceeded=false. At 21+: limitExceeded=true; services continue. remainingCalls never negative. total/threshold are compatibility aliases. Breakdown groups HTTP method + normalized endpoint; errorCount counts status >=400. This read is not counted.",
+        "responses": {
+          "200": {
+            "description": "Read current user API consumption",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Usage"
+                },
+                "example": {
+                  "totalUsage": 1,
+                  "freeAllowance": 20,
+                  "remainingCalls": 19,
+                  "limitExceeded": false,
+                  "allowanceExhausted": false,
+                  "total": 1,
+                  "threshold": 20,
+                  "breakdown": [
+                    {
+                      "method": "GET",
+                      "endpoint": "/api/v1/questions",
+                      "count": 1,
+                      "errorCount": 0
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dashboard": {
+      "get": {
+        "operationId": "adminDashboard",
+        "summary": "Read account totals (administrator)",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Counts by role, not API usage.",
+        "responses": {
+          "200": {
+            "description": "Read account totals (administrator)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                },
+                "example": {
+                  "users": 2,
+                  "admins": 1
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Administrator access required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "adminUsers",
+        "summary": "List registered users (administrator)",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. Public profile fields only; no passwords/hashes or api_calls field. No create/update/delete account-management routes exist.",
+        "responses": {
+          "200": {
+            "description": "List registered users (administrator)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                },
+                "example": {
+                  "users": [
+                    {
+                      "id": 1,
+                      "email": "member@example.test",
+                      "role": "user",
+                      "created_at": "2026-11-24T12:00:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Administrator access required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/usage": {
+      "get": {
+        "operationId": "adminUsage",
+        "summary": "Read API statistics (administrator)",
+        "tags": [
+          "Administration"
+        ],
+        "description": "Administrator only. byUser includes zero-use accounts. byEndpoint groups method and normalized route_template (e.g. /api/v1/questions/:id, never a resource ID). count and errorCount are JSON integers. Statistics reads are not counted.",
+        "responses": {
+          "200": {
+            "description": "Read API statistics (administrator)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsage"
+                },
+                "example": {
+                  "byUser": [
+                    {
+                      "user_id": 1,
+                      "email": "member@example.test",
+                      "count": 1
+                    },
+                    {
+                      "user_id": 2,
+                      "email": "admin@example.test",
+                      "count": 0
+                    }
+                  ],
+                  "byEndpoint": [
+                    {
+                      "method": "GET",
+                      "endpoint": "/api/v1/questions",
+                      "count": 1,
+                      "errorCount": 0
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Authentication required"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Administrator access required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "API health",
+        "tags": [
+          "Diagnostics"
+        ],
+        "description": "Public, uncounted health check.",
+        "responses": {
+          "200": {
+            "description": "API is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                },
+                "example": {
+                  "message": "CodeBridge AI API is running"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server/database error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Internal server error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/db-test": {
+      "get": {
+        "operationId": "databaseDiagnostic",
+        "summary": "Database diagnostic (development only)",
+        "tags": [
+          "Diagnostics"
+        ],
+        "description": "Available only when enableDatabaseDiagnostic=true; server.js disables it in production. Development-only and uncounted. In production this route is absent and returns default HTML 404.",
+        "responses": {
+          "200": {
+            "description": "Database diagnostic (development only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "database": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "database"
+                  ]
+                },
+                "example": {
+                  "message": "Database connected successfully",
+                  "database": "codebridge_ai"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Database query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Database connection failed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Disabled in production; default Express HTML response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "<!DOCTYPE html>\n<html><body><pre>Cannot GET /api/v1/db-test</pre></body></html>"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "codebridge_session",
+        "description": "Existing HttpOnly browser cookie only. Do not paste tokens into Swagger Authorize; log in through the configured frontend."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "created_at"
+        ]
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "Question": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_edited_by": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "nullable": true
+          },
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "title",
+          "body",
+          "created_at",
+          "updated_at",
+          "last_edited_by",
+          "hidden"
+        ]
+      },
+      "QuestionResponse": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/Question"
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "QuestionList": {
+        "type": "object",
+        "properties": {
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          }
+        },
+        "required": [
+          "questions"
+        ]
+      },
+      "UsageRow": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errorCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "method",
+          "endpoint",
+          "count",
+          "errorCount"
+        ]
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "totalUsage": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "freeAllowance": {
+            "type": "integer",
+            "enum": [
+              20
+            ]
+          },
+          "remainingCalls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limitExceeded": {
+            "type": "boolean",
+            "description": "True only after more than 20 calls."
+          },
+          "allowanceExhausted": {
+            "type": "boolean",
+            "description": "True at 20 calls and above."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Compatibility alias of totalUsage."
+          },
+          "threshold": {
+            "type": "integer",
+            "enum": [
+              20
+            ],
+            "description": "Compatibility alias of freeAllowance."
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageRow"
+            }
+          }
+        },
+        "required": [
+          "totalUsage",
+          "freeAllowance",
+          "remainingCalls",
+          "limitExceeded",
+          "allowanceExhausted",
+          "total",
+          "threshold",
+          "breakdown"
+        ]
+      },
+      "AdminUsage": {
+        "type": "object",
+        "properties": {
+          "byUser": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "user_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "user_id",
+                "email",
+                "count"
+              ]
+            }
+          },
+          "byEndpoint": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageRow"
+            }
+          }
+        },
+        "required": [
+          "byUser",
+          "byEndpoint"
+        ]
+      },
+      "Dashboard": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "admins": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "users",
+          "admins"
+        ]
+      },
+      "UserList": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
+      "Improvement": {
+        "type": "object",
+        "properties": {
+          "improvedQuestion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "improvedQuestion"
+        ]
+      },
+      "Registration": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and lowercased. ASCII mailbox validation; local part at most 64 characters."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "description": "At least 8 Unicode code points; at most 72 UTF-8 bytes. No role or ID input is accepted for privilege assignment."
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 1,
+            "description": "1 or more Unicode code points, at most 72 UTF-8 bytes. Supports preexisting demo credentials."
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "CreateQuestion": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Trimmed length 12-120 JavaScript UTF-16 code units."
+          },
+          "body": {
+            "type": "string",
+            "default": "",
+            "description": "Optional; trimmed length 0-12000 UTF-16 code units."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "UpdateQuestion": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "If present: trimmed length 12-120 UTF-16 code units."
+          },
+          "body": {
+            "type": "string",
+            "description": "If present: trimmed length 0-12000 UTF-16 code units."
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "title"
+            ]
+          },
+          {
+            "required": [
+              "body"
+            ]
+          }
+        ]
+      },
+      "ImproveInput": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Trimmed length 1-2000 UTF-16 code units. Whitespace-only input is rejected."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    }
+  }
+}

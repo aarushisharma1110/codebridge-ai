@@ -76,7 +76,7 @@ async function request(route, { method = 'GET', cookie, body, requestOrigin = or
         method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(5000)
     });
     const text = await response.text();
-    return { status: response.status, headers: response.headers, data: text ? JSON.parse(text) : undefined };
+    return { status: response.status, headers: response.headers, data: text ? (response.headers.get('content-type')?.includes('application/json') ? JSON.parse(text) : text) : undefined };
 }
 
 async function account(name, role = 'user') {
@@ -311,4 +311,164 @@ test('requires a session on all question routes and enforces the write origin', 
         }
     }
     assert.deepEqual(await savedQuestion(question.id), stored);
+});
+
+test('tracks usage in PostgreSQL with immediate reads, exclusions, thresholds, independent users and sessions', async () => {
+    const actor = await account('usage-owner');
+    const other = await account('usage-other');
+    const usage = async (who = actor) => {
+        const response = await request('/usage', { cookie: who.cookie });
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        return response.data;
+    };
+    assert.equal((await request('/usage')).status, 401);
+    assert.deepEqual(await usage(), { totalUsage: 0, freeAllowance: 20, remainingCalls: 20,
+        limitExceeded: false, allowanceExhausted: false, total: 0, threshold: 20, breakdown: [] });
+    for (const target of ['/health', '/db-test', '/auth/me', '/usage', '/admin/usage', '/docs']) {
+        await request(target, { cookie: actor.cookie });
+    }
+    await request('/questions', { method: 'HEAD', cookie: actor.cookie });
+    await request('/questions', { method: 'OPTIONS', cookie: actor.cookie });
+    await request('/questions');
+    assert.equal((await usage()).totalUsage, 0);
+    const question = await createQuestion({ title: validTitle }, actor);
+    assert.equal((await usage()).totalUsage, 1);
+    await request(`/questions/${question.id}`, { cookie: actor.cookie });
+    await request(`/questions/${question.id}`, { method: 'PATCH', cookie: actor.cookie, body: { title: validTitle } });
+    await request(`/questions/${question.id}/hide`, { method: 'POST', cookie: actor.cookie });
+    assert.equal((await request(`/questions/${question.id}/reshow`, { method: 'POST', cookie: actor.cookie })).status, 403);
+    // Invalid AI input is a counted functional failure, without invoking a model.
+    assert.equal((await request('/ai/improve-question', { method: 'POST', cookie: actor.cookie, body: {} })).status, 400);
+    assert.equal((await request('/questions/no-id', { cookie: actor.cookie })).status, 404);
+    assert.equal((await usage()).totalUsage, 7);
+    assert.equal((await usage(other)).totalUsage, 0);
+    const concurrent = await Promise.all(Array.from({ length: 13 }, () => request('/questions', { cookie: actor.cookie })));
+    assert.ok(concurrent.every(row => row.status === 200));
+    const exhausted = await usage();
+    assert.equal(exhausted.totalUsage, 20);
+    assert.equal(exhausted.remainingCalls, 0);
+    assert.equal(exhausted.allowanceExhausted, true);
+    assert.equal(exhausted.limitExceeded, false);
+    assert.equal((await request('/questions', { cookie: actor.cookie })).status, 200);
+    assert.equal((await usage()).totalUsage, 21);
+    assert.equal((await usage()).limitExceeded, true);
+    assert.equal((await request('/admin/usage', { cookie: actor.cookie })).status, 403);
+    const stats = await request('/admin/usage', { cookie: admin.cookie });
+    assert.equal(stats.status, 200);
+    assert.equal(stats.data.byUser.find(row => row.user_id === actor.id).count, 21);
+    assert.ok(stats.data.byEndpoint.some(row => row.endpoint === '/api/v1/questions/:id' && row.method === 'GET'));
+    const { rows } = await pool.query('SELECT * FROM api_usage WHERE user_id = $1', [actor.id]);
+    assert.equal(rows.length, 21);
+    assert.ok(rows.every(row => !/\/questions\/\d+(?:\/|$)/.test(row.route_template)));
+    assert.ok(rows.some(row => row.status_code === 403));
+    assert.ok(rows.some(row => row.status_code === 400 && row.route_template === '/api/v1/ai/improve-question'));
+    await request('/auth/logout', { method: 'POST', cookie: actor.cookie });
+    const login = await request('/auth/login', { method: 'POST', body: { email: actor.profile.email, password } });
+    actor.cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    assert.equal((await usage()).totalUsage, 21);
+    await request(`/questions/${question.id}/reshow`, { method: 'POST', cookie: admin.cookie });
+    const deleted = await request(`/questions/${question.id}`, { method: 'DELETE', cookie: actor.cookie });
+    assert.equal(deleted.status, 204);
+    assert.equal((await usage()).totalUsage, 22);
+});
+
+test('auth edge cases use real bcrypt storage, normalized unique email and safe responses', async () => {
+    const bcrypt = require('bcrypt');
+    const credentials = { email: ' Security-Edges@Example.Test ', password: 'test-only strong passphrase' };
+    const registered = await request('/auth/register', { method: 'POST', body: { ...credentials, role: 'admin', id: admin.id } });
+    assert.equal(registered.status, 201);
+    assert.equal(registered.data.user.email, 'security-edges@example.test');
+    assert.equal(registered.data.user.role, 'user');
+    assert.deepEqual(Object.keys(registered.data.user).sort(), ['created_at', 'email', 'id', 'role']);
+    const { rows: [stored] } = await pool.query('SELECT * FROM users WHERE id = $1', [registered.data.user.id]);
+    assert.equal(stored.role, 'user');
+    assert.notEqual(stored.password_hash, credentials.password);
+    assert.equal(bcrypt.getRounds(stored.password_hash), 12);
+    assert.equal(await bcrypt.compare(credentials.password, stored.password_hash), true);
+    const duplicate = await request('/auth/register', { method: 'POST', body: { ...credentials, email: 'security-edges@example.test' } });
+    assert.equal(duplicate.status, 409);
+    assert.deepEqual(Object.keys(duplicate.data), ['message']);
+    const countUsers = async () => (await pool.query('SELECT COUNT(*)::int AS count FROM users')).rows[0].count;
+    const countBefore = await countUsers();
+    for (const body of [
+        {}, { email: null, password: credentials.password },
+        { email: 'invalid', password: credentials.password },
+        { email: 'a..b@example.test', password: credentials.password },
+        { email: 'a@-invalid.test', password: credentials.password },
+        { email: 'valid@example.test', password: 'short' },
+        { email: 'valid@example.test', password: 12345678 },
+        { email: 'valid@example.test', password: 'x'.repeat(73) },
+        { email: 'valid@example.test', password: '\u00e9'.repeat(37) }
+    ]) {
+        const denied = await request('/auth/register', { method: 'POST', body });
+        assert.equal(denied.status, 400);
+        assert.deepEqual(Object.keys(denied.data), ['message']);
+        assert.equal(denied.headers.get('set-cookie'), null);
+    }
+    assert.equal(await countUsers(), countBefore);
+    const responses = [];
+    for (const body of [
+        { ...credentials, password: 'wrong password' },
+        { ...credentials, email: 'does-not-exist@example.test' },
+        { email: 'invalid', password: credentials.password },
+        { email: credentials.email, password: '' }
+    ]) {
+        const denied = await request('/auth/login', { method: 'POST', body });
+        assert.equal(denied.status, 401);
+        assert.equal(denied.headers.get('set-cookie'), null);
+        assert.deepEqual(Object.keys(denied.data), ['message']);
+        responses.push(denied.data);
+    }
+    assert.ok(responses.every(data => JSON.stringify(data) === JSON.stringify(responses[0])));
+    const accepted = await request('/auth/login', { method: 'POST', body: credentials });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(Object.keys(accepted.data.user).sort(), ['created_at', 'email', 'id', 'role']);
+    const cookie = accepted.headers.get('set-cookie').split(';', 1)[0];
+    const me = await request(`/auth/me?user_id=${admin.id}&id=${admin.id}`, { cookie });
+    assert.equal(me.data.user.id, registered.data.user.id);
+    // There is no account-update API: users cannot escalate through invented routes.
+    for (const target of ['/auth/me', `/users/${registered.data.user.id}`, `/admin/users/${registered.data.user.id}`]) {
+        const denied = await request(target, { method: 'PATCH', cookie, body: { role: 'admin' } });
+        assert.equal(denied.status, 404);
+    }
+    assert.equal((await pool.query('SELECT role FROM users WHERE id = $1', [registered.data.user.id])).rows[0].role, 'user');
+});
+
+test('direct API requests isolate account data and usage, reject identity injection and enforce every admin route', async () => {
+    const a = await account('isolation-a');
+    const b = await account('isolation-b');
+    const question = await createQuestion({ title: validTitle, user_id: b.id, role: 'admin' }, a);
+    assert.equal(question.user_id, a.id);
+    const before = await savedQuestion(question.id);
+    for (const method of ['PATCH', 'DELETE']) {
+        const denied = await request(`/questions/${question.id}?user_id=${a.id}`, { method, cookie: b.cookie,
+            body: method === 'PATCH' ? { title: 'Unauthorized change attempt', user_id: a.id } : undefined });
+        assert.equal(denied.status, 403);
+    }
+    assert.deepEqual(await savedQuestion(question.id), before);
+    const publicRead = await request(`/questions/${question.id}`, { cookie: b.cookie });
+    assert.equal(publicRead.status, 200); // Shared visible questions are intentionally readable to signed-in users.
+    for (const target of ['/admin/dashboard', '/admin/users', '/admin/usage']) {
+        assert.equal((await request(target)).status, 401);
+        assert.equal((await request(target, { cookie: b.cookie })).status, 403);
+        assert.equal((await request(target, { cookie: admin.cookie })).status, 200);
+    }
+    assert.equal((await request(`/auth/me?id=${a.id}`, { cookie: b.cookie })).data.user.id, b.id);
+    const ownUsage = await request('/usage', { cookie: b.cookie });
+    const injectedUsage = await request(`/usage?user_id=${a.id}&id=${a.id}`, { cookie: b.cookie });
+    assert.deepEqual(injectedUsage.data, ownUsage.data);
+    assert.equal((await request(`/usage/${a.id}`, { cookie: b.cookie })).status, 404);
+    assert.equal((await request(`/auth/users/${a.id}`, { cookie: b.cookie })).status, 404);
+    const { rows: [count] } = await pool.query('SELECT COUNT(*)::int AS count FROM api_usage WHERE user_id = $1', [b.id]);
+    assert.equal(ownUsage.data.totalUsage, count.count);
+    const selfUpdate = await request(`/questions/${question.id}`, { method: 'PATCH', cookie: a.cookie,
+        body: { title: validTitle, user_id: b.id } });
+    assert.equal(selfUpdate.status, 200);
+    assert.equal(selfUpdate.data.question.user_id, a.id);
+    const logout = await request('/auth/logout', { method: 'POST', cookie: b.cookie });
+    assert.equal(logout.status, 204);
+    // Model browser deletion: the next request has no session cookie.
+    assert.equal((await request('/auth/me')).status, 401);
+    assert.equal((await request('/questions')).status, 401);
 });

@@ -18,7 +18,7 @@
 {$API_HOST} {
 	# Block the development database diagnostic at the public edge.
 	@publicApi {
-		path /api/v1/*
+		path /api/v1/* /doc /doc/*
 		not path /api/v1/db-test /api/v1/db-test/
 	}
 	handle @publicApi {

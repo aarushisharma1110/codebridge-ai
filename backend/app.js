@@ -7,6 +7,7 @@ const createAdminRouter = require('./routes/admin');
 const createQuestionsRouter = require('./routes/questions');
 const createAiRouter = require('./routes/ai');
 const messages = require('../lang/message/en/messages.json');
+const createApiUsageTracker = require('./middleware/apiUsage');
 
 function createApp({
     pool, clientOrigin, jwtSecret, secureCookies = false, sessionCookieSameSite = 'lax',
@@ -33,6 +34,7 @@ function createApp({
     const session = createSessionAuth({
         pool, secret: jwtSecret, secure: secureCookies, sameSite: sessionCookieSameSite
     });
+    const trackApiUsage = createApiUsageTracker(pool);
 
     app.use(cors({
         origin: (requestOrigin, callback) => callback(null, requestOrigin === clientOrigin),
@@ -42,7 +44,7 @@ function createApp({
     }));
     app.use(cookieParser());
 
-    app.use(['/api/v1/auth', '/api/v1/admin', '/api/v1/questions', '/api/v1/ai'], (req, res, next) => {
+    app.use(['/api/v1/usage', '/api/v1/auth', '/api/v1/admin', '/api/v1/questions', '/api/v1/ai'], (req, res, next) => {
         res.set('Cache-Control', 'no-store');
 
         // Browsers control Origin. Require it for every write, including login and logout.
@@ -53,10 +55,14 @@ function createApp({
     });
     app.use(express.json({ limit: '16kb' }));
 
+    app.get(/^\/doc$/, (req, res) => res.redirect(308, '/doc/'));
+    app.use('/doc', require('./routes/documentation')(enableDatabaseDiagnostic));
+
     app.use('/api/v1/auth', createAuthRouter(pool, session));
     app.use('/api/v1/admin', createAdminRouter(pool, session.requireAuth));
-    app.use('/api/v1/questions', createQuestionsRouter(pool, session.requireAuth));
-    app.use('/api/v1/ai', createAiRouter(session.requireAuth, ai));
+    app.use('/api/v1/questions', createQuestionsRouter(pool, session.requireAuth, trackApiUsage));
+    app.use('/api/v1/ai', createAiRouter(session.requireAuth, ai, trackApiUsage));
+    app.use('/api/v1/usage', require('./routes/usage')(pool, session.requireAuth));
 
     app.get('/api/v1/health', (req, res) => {
         res.json({ message: messages.api.healthy });
