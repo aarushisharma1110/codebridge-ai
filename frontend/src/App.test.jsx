@@ -1,15 +1,29 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
-const member = { id: 1, email: 'member@example.com', role: 'user', created_at: '2026-01-10T12:00:00Z' }
-const admin = { ...member, role: 'admin' }
-const own = { id: 8, user_id: 1, title: 'How do I handle errors?', body: 'I am using React.' }
-const shared = { ...own, id: 9, user_id: 2, title: 'How do I use PostgreSQL?' }
-const suggestion = 'How can I handle request errors in React?'
-const improveRoute = 'POST /ai/improve-question'
+const now = new Date().toISOString()
+const member = { id: 1, handle: 'member', email: 'member@example.com', role: 'user', created_at: now, blocked: false }
+const admin = { ...member, id: 3, handle: 'boss', role: 'admin' }
+const summary = (overrides = {}) => ({
+  id: 8, user_id: 1, title: 'How do I handle errors?', body: 'I am using React.', created_at: now, updated_at: now,
+  last_edited_by: null, hidden: false, category_id: null, category_title: null, category_slug: null, views: 3,
+  selected_answer_id: null, closed: false, close_reason: null, duplicate_of: null, author_handle: 'member',
+  author_role: 'user', author_points: 120, tags: ['react'], answer_count: 0, upvotes: 0, downvotes: 0, netvotes: 0,
+  my_vote: 0, favorited: false, flag_count: 0, my_flag: false, ...overrides,
+})
+const own = summary()
+const shared = summary({ id: 9, user_id: 2, title: 'How do I use PostgreSQL?', author_handle: 'other', tags: ['sql'] })
+const page = (questions) => ({ questions, total: questions.length, page: 1, pageSize: 20 })
+const answer = (overrides = {}) => ({
+  id: 31, question_id: 8, user_id: 2, body: 'Check the status code first.', created_at: now, updated_at: now,
+  last_edited_by: null, hidden: false, author_handle: 'other', author_role: 'user', author_points: 140, selected: false,
+  upvotes: 0, downvotes: 0, netvotes: 0, my_vote: 0, flag_count: 0, my_flag: false, ...overrides,
+})
+const site = { site_title: 'CodeBridge AI', welcome_text: 'Welcome text', show_welcome: 'true', footer_text: '',
+  counts: { questions: 2, answers: 1, comments: 0, users: 3 } }
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'Content-Type': 'application/json' },
@@ -18,13 +32,19 @@ const unauthenticated = () => json({ message: 'Authentication required' }, 401)
 
 function start(path, { account = member, routes = {} } = {}) {
   const fetch = vi.fn(async (url, options) => {
-    const pathname = new URL(url, 'http://localhost').pathname.replace(/^\/api\/v1/, '')
+    const parsed = new URL(url, 'http://localhost')
+    const pathname = parsed.pathname.replace(/^\/api\/v1/, '')
     const key = options.method + ' ' + pathname
-    if (key in routes) return routes[key](options)
+    if (key in routes) return routes[key](options, parsed.searchParams)
     if (key === 'GET /auth/me') return account ? json({ user: account }) : unauthenticated()
-    if (key === 'GET /questions') return json({ questions: [own, shared] })
-    if (key === 'GET /questions/8') return json({ question: own })
-    if (key === 'GET /questions/9') return json({ question: shared })
+    if (key === 'GET /site') return json({ site })
+    if (key === 'GET /categories') return json({ categories: [] })
+    if (key === 'GET /usage') return json({ totalUsage: 1, freeAllowance: 20, remainingCalls: 19, limitExceeded: false,
+      allowanceExhausted: false, breakdown: [] })
+    if (key === 'GET /activity' || key === 'GET /questions') return json(page([own, shared]))
+    if (key === 'GET /questions/8') return json({ question: own, answers: [], comments: [], related: [] })
+    if (key === 'GET /questions/9') return json({ question: shared, answers: [], comments: [], related: [] })
+    if (key.startsWith('GET /users/')) return json({ user: { handle: 'member', points: 120 } })
     return new Response(null, { status: 404 })
   })
   vi.stubGlobal('fetch', fetch)
@@ -32,7 +52,10 @@ function start(path, { account = member, routes = {} } = {}) {
   return { fetch, user: userEvent.setup(), unmount: view.unmount }
 }
 
-beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
+beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  vi.spyOn(window, 'confirm').mockImplementation(() => true)
+})
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -40,358 +63,319 @@ afterEach(() => {
 })
 
 describe('session and authorization', () => {
-  it('protects deep links and returns there after login', async () => {
+  it('protects deep links, accepts a username login and returns to the question', async () => {
     const session = vi.fn().mockImplementationOnce(unauthenticated).mockImplementation(() => json({ user: member }))
-    const { user, fetch } = start('/questions/8', {
-      routes: { 'GET /auth/me': session, 'POST /auth/login': () => json({ user: member }) },
-    })
-    await screen.findByRole('heading', { name: 'Welcome back' })
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    expect(screen.getByText('Enter your email address.')).toBeTruthy()
-    expect(fetch).toHaveBeenCalledTimes(1)
-    await user.type(screen.getByLabelText('Email address'), member.email)
-    await user.type(screen.getByLabelText('Password', { exact: true }), 'abc')
-    await user.click(screen.getByRole('button', { name: 'Show password' }))
-    expect(screen.getByLabelText('Password', { exact: true }).type).toBe('text')
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    await screen.findByRole('heading', { name: own.title })
-    expect(session).toHaveBeenCalledTimes(2)
+    const login = vi.fn(() => json({ user: member }))
+    const { user, fetch } = start('/8/how-do-i-handle-errors', { routes: { 'GET /auth/me': session, 'POST /auth/login': login } })
+    await screen.findByRole('heading', { name: 'Log in' })
+    expect(screen.getByText('Please log in or register to view this page.')).toBeTruthy()
+    const form = screen.getByRole('button', { name: 'Log In' }).closest('form')
+    await user.click(within(form).getByRole('button', { name: 'Log In' }))
+    expect(within(form).getByText('Enter your email or username.')).toBeTruthy()
+    expect(login).not.toHaveBeenCalled()
+    await user.type(within(form).getByLabelText('Email or Username:'), 'member')
+    await user.type(within(form).getByLabelText('Password:'), 'abc')
+    await user.click(within(form).getByRole('button', { name: 'Log In' }))
+    await screen.findByRole('link', { name: own.title })
+    expect(JSON.parse(login.mock.calls[0][0].body)).toEqual({ email: 'member', password: 'abc' })
     expect(fetch.mock.calls.every(([, options]) => options.credentials === 'include')).toBe(true)
   })
 
   it('stays on the login page when accepted credentials do not establish a session', async () => {
-    const { user, fetch } = start('/questions/8', {
-      account: null, routes: { 'POST /auth/login': () => json({ user: member }) },
-    })
-    await screen.findByRole('heading', { name: 'Welcome back' })
-    await user.type(screen.getByLabelText('Email address'), member.email)
-    await user.type(screen.getByLabelText('Password', { exact: true }), 'a passphrase')
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('could not establish a session')
-    expect(screen.getByRole('button', { name: 'Log in' }).disabled).toBe(false)
-    expect(fetch.mock.calls.map(([url]) => new URL(url, 'http://localhost').pathname))
-      .toEqual(['/api/v1/auth/me', '/api/v1/auth/login', '/api/v1/auth/me'])
+    const { user } = start('/login', { account: null, routes: { 'POST /auth/login': () => json({ user: member }) } })
+    const form = (await screen.findByRole('button', { name: 'Log In' })).closest('form')
+    await user.type(within(form).getByLabelText('Email or Username:'), member.email)
+    await user.type(within(form).getByLabelText('Password:'), 'a passphrase')
+    await user.click(within(form).getByRole('button', { name: 'Log In' }))
+    expect((await within(form).findByRole('alert')).textContent).toContain('could not establish a session')
   })
 
-  it('shows the full email on the Questions landing page after login and session restoration', async () => {
-    const session = vi.fn().mockImplementationOnce(unauthenticated).mockImplementation(() => json({ user: member }))
-    const routes = { 'GET /auth/me': session, 'POST /auth/login': () => json({ user: member }) }
-    const { user, unmount } = start('/login', { routes })
-    await screen.findByRole('heading', { name: 'Welcome back' })
-    await user.type(screen.getByLabelText('Email address'), member.email)
-    await user.type(screen.getByLabelText('Password', { exact: true }), 'a passphrase')
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    await screen.findByRole('heading', { name: 'My Questions' })
-    expect(screen.getByText(member.email, { exact: true })).toBeTruthy()
-
-    unmount()
-    start('/questions', { routes })
-    expect(await screen.findByText(member.email, { exact: true })).toBeTruthy()
-    expect(session).toHaveBeenCalledTimes(3)
-  })
-
-  it('validates registration, shows a duplicate error, and redirects after success', async () => {
-    const register = vi.fn().mockImplementationOnce(() => json({ message: 'Email already registered' }, 409))
-      .mockImplementationOnce(() => json({ user: member }, 201))
+  it('validates registration with a username, shows a duplicate error and redirects after success', async () => {
+    const register = vi.fn()
+      .mockImplementationOnce(() => json({ message: 'That username is already taken.' }, 409))
+      .mockImplementation(() => json({ user: { ...member, handle: 'newbie' } }, 201))
     const { user } = start('/register', { account: null, routes: { 'POST /auth/register': register } })
-    await screen.findByRole('heading', { name: 'Create an account' })
-    await user.type(screen.getByLabelText('Email address'), member.email)
-    await user.type(screen.getByLabelText('Password', { exact: true }), 'short')
-    const confirm = screen.getByLabelText('Confirm password')
-    await user.type(confirm, 'different')
-    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    await screen.findByRole('heading', { name: 'Register as a new user' })
+    await user.type(screen.getByLabelText('Username:'), 'a b')
+    await user.type(screen.getByLabelText('Email:'), 'new@example.com')
+    await user.type(screen.getByLabelText('Password:'), 'short')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    expect(screen.getByText('Usernames must be 2-20 letters, digits, dots, underscores or hyphens.')).toBeTruthy()
     expect(screen.getByText('Use at least 8 characters.')).toBeTruthy()
-    expect(screen.getByText('Passwords must match.')).toBeTruthy()
     expect(register).not.toHaveBeenCalled()
-    const password = screen.getByLabelText('Password', { exact: true })
-    await user.clear(password)
-    await user.type(password, 'a passphrase')
-    await user.clear(confirm)
-    await user.type(confirm, 'a passphrase')
-    await user.click(screen.getByRole('button', { name: 'Create account' }))
-    expect((await screen.findByRole('alert')).textContent).toBe('Email already registered')
-    await user.click(screen.getByRole('button', { name: 'Create account' }))
-    expect(await screen.findByText('Account created. Log in to get started.')).toBeTruthy()
+    await user.clear(screen.getByLabelText('Username:'))
+    await user.type(screen.getByLabelText('Username:'), 'newbie')
+    await user.type(screen.getByLabelText('Password:'), ' enough now')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('That username is already taken.')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    await screen.findByText('Registration complete. Please log in.')
+    expect(JSON.parse(register.mock.calls[1][0].body)).toEqual({ handle: 'newbie', email: 'new@example.com', password: 'short enough now' })
   })
 
-  it('restores a member session and blocks the admin route and API requests', async () => {
+  it('hides administration from members and makes no admin API request', async () => {
     const { fetch } = start('/admin')
-    await screen.findByRole('heading', { name: 'Administrator access required' })
-    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull()
-    expect(fetch.mock.calls.filter(([url]) => !url.endsWith('/usage'))).toHaveLength(1)
+    await screen.findByText('Only administrators can see this page.')
+    expect(screen.queryByRole('link', { name: 'Admin' })).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => url.includes('/admin/'))).toBe(false)
   })
 
-  it('keeps administrator totals visible when an older API is missing the directory route', async () => {
-    start('/admin', {
-      account: admin,
-      routes: {
-        'GET /admin/dashboard': () => json({ users: 12, admins: 2 }),
-        'GET /admin/users': () => new Response(null, { status: 404 }),
-      },
-    })
-    await screen.findByRole('heading', { name: 'Administration' })
-    expect(screen.getByRole('link', { name: 'Administration' })).toBeTruthy()
-    expect(await screen.findByText('12')).toBeTruthy()
-    expect(await screen.findByText('The registered-user directory is unavailable.')).toBeTruthy()
-    expect(await screen.findByText('Endpoint usage data is unavailable.')).toBeTruthy()
-  })
-
-  it('shows registered users and combines email and role filters', async () => {
-    const administrator = { id: 2, email: 'admin@example.com', role: 'admin', created_at: '2026-02-05T16:30:00.000Z' }
-    const reader = { id: 3, email: 'reader@example.org', role: 'user', created_at: '2026-02-08T09:15:00.000Z' }
-    const directory = vi.fn(() => json({ users: [member, administrator, reader] }))
-    const { user } = start('/admin', {
-      account: administrator,
-      routes: {
-        'GET /admin/dashboard': () => json({ users: 2, admins: 1 }),
-        'GET /admin/users': directory,
-      },
-    })
-
-    const table = await screen.findByRole('table', { name: 'Registered users' })
-    expect(directory).toHaveBeenCalledWith(expect.objectContaining({ method: 'GET', credentials: 'include' }))
-    const memberRow = within(table).getByRole('row', { name: /member@example\.com/ })
-    const adminRow = within(table).getByRole('row', { name: /admin@example\.com/ })
-    expect(within(table).getAllByRole('row')).toHaveLength(4)
-    expect(within(memberRow).getByRole('cell', { name: 'Member' })).toBeTruthy()
-    expect(within(adminRow).getByRole('cell', { name: 'Administrator' })).toBeTruthy()
-    expect(adminRow.querySelector('time')?.dateTime).toBe(administrator.created_at)
-    expect(within(adminRow).queryByRole('cell', { name: 'Unavailable' })).toBeNull()
-
-    const emailFilter = screen.getByRole('searchbox', { name: 'Filter by email' })
-    const roleFilter = screen.getByRole('combobox', { name: 'Role' })
-    await user.type(emailFilter, 'EXAMPLE.COM')
-    expect(within(table).getAllByRole('row')).toHaveLength(3)
-    expect(within(table).queryByRole('cell', { name: reader.email })).toBeNull()
-    await user.selectOptions(roleFilter, 'admin')
-    expect(within(table).getAllByRole('row')).toHaveLength(2)
-    expect(within(table).getByRole('cell', { name: administrator.email })).toBeTruthy()
-    expect(within(table).queryByRole('cell', { name: member.email })).toBeNull()
-    await user.type(emailFilter, '.invalid')
-    expect(screen.queryByRole('table', { name: 'Registered users' })).toBeNull()
-    expect(screen.getByText('No accounts match your filters.')).toBeTruthy()
-  })
-
-  it('prompts for a new login when a protected request receives 401', async () => {
-    start('/questions', { routes: { 'GET /questions': unauthenticated } })
+  it('returns to login with a notice when a protected request receives 401', async () => {
+    start('/', { routes: { 'GET /activity': unauthenticated } })
+    await screen.findByRole('heading', { name: 'Log in' })
     expect(await screen.findByText('Your session ended. Log in to continue.')).toBeTruthy()
   })
 })
 
-describe('question workflows', () => {
-  it('labels ownership and supports text search and owned-only filtering', async () => {
-    const { user } = start('/questions')
-    expect(await screen.findByText('Yours')).toBeTruthy()
-    expect(screen.getByText('Shared')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Owned by me' }))
-    expect(screen.queryByRole('link', { name: shared.title })).toBeNull()
-    await user.type(screen.getByRole('searchbox'), 'no matches')
-    expect(screen.getByRole('heading', { name: 'No matching questions' })).toBeTruthy()
+describe('question lists', () => {
+  it('sends the home page Ask box title to the Ask form', async () => {
+    const { user } = start('/')
+    await user.type(await screen.findByLabelText('Ask a question:'), 'How do I change the site title?')
+    await user.keyboard('{Enter}')
+    expect((await screen.findByLabelText('The question in one sentence:')).value).toBe('How do I change the site title?')
   })
 
-  it('shows a genuine empty state', async () => {
-    start('/questions', { routes: { 'GET /questions': () => json({ questions: [] }) } })
-    expect(await screen.findByRole('heading', { name: 'No questions yet' })).toBeTruthy()
+  it('shows Q2A list items with vote and answer counts and votes from the list', async () => {
+    const vote = vi.fn(() => json({ question: { ...shared, netvotes: 1, upvotes: 1, my_vote: 1 } }))
+    const { user } = start('/', { routes: { 'POST /questions/9/vote': vote } })
+    await screen.findByRole('heading', { name: 'Recent activity' })
+    const item = (await screen.findByRole('link', { name: shared.title })).closest('.qa-q-list-item')
+    expect(within(item).getByText('votes')).toBeTruthy()
+    expect(within(item).getByText('answers')).toBeTruthy()
+    expect(within(item).getByRole('link', { name: 'sql' }).getAttribute('href')).toBe('/tag/sql')
+    const ownItem = screen.getByRole('link', { name: own.title }).closest('.qa-q-list-item')
+    expect(within(ownItem).getAllByRole('button', { name: 'You cannot vote on your own post' }).every((button) => button.disabled)).toBe(true)
+    await user.click(within(item).getByRole('button', { name: 'Click to vote up' }))
+    await within(item).findByText('vote')
+    expect(within(item).getByText('+1')).toBeTruthy()
+    expect(within(item).getByText('views')).toBeTruthy()
+    expect(JSON.parse(vote.mock.calls[0][0].body)).toEqual({ vote: 1 })
+    expect(within(item).getByRole('button', { name: 'Click to remove your up vote' })).toBeTruthy()
   })
 
-  it('validates a new question, preserves a failed draft, and retries the save', async () => {
-    const create = vi.fn().mockImplementationOnce(() => json({}, 500))
-      .mockImplementationOnce(() => json({ question: own }, 201))
-    const { user } = start('/questions/new', { routes: { 'POST /questions': create } })
-    await screen.findByRole('heading', { name: 'New Question' })
-    const save = screen.getByRole('button', { name: 'Save Question' })
-    await user.click(save)
+  it('switches sort order from the sub navigation and searches from the sidebar', async () => {
+    const list = vi.fn(() => json(page([own])))
+    const { user } = start('/questions', { routes: { 'GET /questions': (options, params) => list(params.toString()) } })
+    await screen.findByRole('heading', { name: 'Recent questions' })
+    await user.click(screen.getByRole('link', { name: 'Most votes' }))
+    await screen.findByRole('heading', { name: 'Highest voted questions' })
+    expect(list).toHaveBeenLastCalledWith('sort=votes')
+    await user.type(screen.getAllByPlaceholderText('Search...')[0], 'react errors')
+    await user.click(screen.getAllByRole('button', { name: 'Search' })[0])
+    await screen.findByRole('heading', { name: 'Search results for react errors' })
+    expect(list).toHaveBeenLastCalledWith('q=react+errors')
+  })
+
+  it('shows a genuine empty state for unanswered questions', async () => {
+    start('/unanswered', { routes: { 'GET /questions': () => json(page([])) } })
+    await screen.findByText('No questions without answers.')
+    expect(screen.getByRole('link', { name: 'Help get things started by asking a question.' })).toBeTruthy()
+  })
+})
+
+describe('question page', () => {
+  it('posts a validated answer and lets the asker select it as best', async () => {
+    const created = answer()
+    const select = vi.fn(() => json({ question: { ...own, answer_count: 1, selected_answer_id: 31 },
+      answers: [{ ...created, selected: true }] }))
+    const { user } = start('/8/how-do-i-handle-errors', { routes: {
+      'POST /questions/8/answers': () => json({ answer: created }, 201), 'POST /questions/8/select': select,
+    } })
+    await screen.findByRole('heading', { name: 'Your answer' })
+    expect(screen.getByRole('button', { name: 'Delete this question permanently' })).toBeTruthy()
+    await user.type(screen.getByLabelText('Write your answer here.'), 'too short')
+    await user.click(screen.getByRole('button', { name: 'Add answer' }))
+    expect(screen.getByRole('alert').textContent).toBe('Answers must be 12-12,000 characters.')
+    await user.type(screen.getByLabelText('Write your answer here.'), ' but now long enough')
+    await user.click(screen.getByRole('button', { name: 'Add answer' }))
+    await screen.findByText('1 Answer')
+    expect(screen.queryByRole('button', { name: 'Delete this question permanently' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Select as best answer' }))
+    await screen.findByRole('button', { name: 'Remove selection as best answer' })
+    expect(JSON.parse(select.mock.calls[0][0].body)).toEqual({ answer_id: 31 })
+    expect(screen.getAllByText('Best answer').length).toBeGreaterThan(0)
+  })
+
+  it('lets readers flag and favorite but hides owner and moderator controls', async () => {
+    const flag = vi.fn(() => json({ question: { ...shared, my_flag: true, flag_count: 1 } }))
+    const favorite = vi.fn(() => json({ question: { ...shared, favorited: true } }))
+    const { user } = start('/9/how-do-i-use-postgresql', { routes: {
+      'POST /questions/9/flag': flag, 'POST /questions/9/favorite': favorite,
+    } })
+    await screen.findByRole('link', { name: shared.title })
+    expect(screen.queryByRole('button', { name: 'Edit this question' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Hide this question' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete this question permanently' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Flag this question as spam or inappropriate' }))
+    await screen.findByRole('button', { name: 'Remove the flag you added' })
+    await user.click(screen.getByRole('button', { name: 'Add to my favorites' }))
+    await screen.findByRole('button', { name: 'Remove from my favorites' })
+  })
+
+  it('lets an owner hide a question and returns to the list', async () => {
+    const hide = vi.fn(() => new Response(null, { status: 204 }))
+    const { user } = start('/8/how-do-i-handle-errors', { routes: { 'POST /questions/8/hide': hide } })
+    await user.click(await screen.findByRole('button', { name: 'Hide this question' }))
+    await screen.findByRole('heading', { name: 'Recent questions' })
+    expect(hide).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets administrators reshow a hidden question and see its moderation state', async () => {
+    const hidden = { ...shared, hidden: true }
+    const reshow = vi.fn(() => json({ question: { ...shared, hidden: false } }))
+    const { user } = start('/9', { account: admin, routes: {
+      'GET /questions/9': () => json({ question: hidden, answers: [], comments: [], related: [] }),
+      'POST /questions/9/reshow': reshow,
+    } })
+    await screen.findByText('This question has been hidden.')
+    await user.click(screen.getByRole('button', { name: 'Reshow this question' }))
+    await waitFor(() => expect(screen.queryByText('This question has been hidden.')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Edit this question' })).toBeTruthy()
+  })
+
+  it('requires confirmation before deleting and redirects afterwards', async () => {
+    const remove = vi.fn(() => new Response(null, { status: 204 }))
+    window.confirm.mockImplementationOnce(() => false)
+    const { user } = start('/8/how-do-i-handle-errors', { routes: { 'DELETE /questions/8': remove } })
+    const button = await screen.findByRole('button', { name: 'Delete this question permanently' })
+    await user.click(button)
+    expect(remove).not.toHaveBeenCalled()
+    await user.click(button)
+    await screen.findByRole('heading', { name: 'Recent questions' })
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('edits a question inline with tags', async () => {
+    const update = vi.fn((options) => json({ question: { ...own, ...JSON.parse(options.body), category_id: null } }))
+    const { user } = start('/8/how-do-i-handle-errors', { routes: { 'PATCH /questions/8': update } })
+    await user.click(await screen.findByRole('button', { name: 'Edit this question' }))
+    const tags = screen.getByLabelText('Tags - use hyphens to combine words:')
+    await user.clear(tags)
+    await user.type(tags, 'React Errors')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByRole('link', { name: 'errors' })
+    expect(JSON.parse(update.mock.calls[0][0].body)).toEqual({
+      title: own.title, body: `<p>${own.body}</p>`, format: 'html', tags: ['react', 'errors'], category_id: null,
+    })
+  })
+})
+
+describe('rich text posts', () => {
+  it('renders sanitized HTML answers and strips scripts and event handlers', async () => {
+    const html = answer({ format: 'html', body: '<p><b>Bold</b> text<img src="x" onerror="window.hacked=1"><script>window.hacked=1</script></p>' })
+    start('/8/how-do-i-handle-errors', { routes: {
+      'GET /questions/8': () => json({ question: { ...own, answer_count: 1 }, answers: [html], comments: [], related: [] }),
+    } })
+    const bold = await screen.findByText('Bold')
+    expect(bold.tagName).toBe('B')
+    const content = bold.closest('.qa-a-item-content')
+    expect(content.innerHTML).not.toMatch(/onerror|script/)
+    expect(window.hacked).toBeUndefined()
+  })
+
+  it('shows the CKEditor-style toolbar on the Ask form', async () => {
+    start('/ask')
+    const toolbar = await screen.findByRole('toolbar', { name: 'Formatting' })
+    for (const name of ['Bold', 'Italic', 'Underline', 'Link', 'Image', 'Table', 'Block Quote', 'Undo']) {
+      expect(within(toolbar).getByRole('button', { name })).toBeTruthy()
+    }
+  })
+})
+
+describe('asking with AI improvement', () => {
+  it('validates, accepts an AI rewrite of the title and posts tags', async () => {
+    const improve = vi.fn(() => json({ improvedQuestion: 'Why does my API return a 404 error?' }))
+    const create = vi.fn((options) => json({ question: summary({ id: 12, ...JSON.parse(options.body) }) }, 201))
+    const { user } = start('/ask', { routes: { 'POST /ai/improve-question': improve, 'POST /questions': create,
+      'GET /questions/12': () => json({ question: summary({ id: 12, title: 'Why does my API return a 404 error?' }), answers: [], comments: [], related: [] }) } })
+    await screen.findByRole('heading', { name: 'Ask a question' })
+    await user.click(screen.getByRole('button', { name: 'Ask the Question' }))
     expect(screen.getByText('Enter a question title.')).toBeTruthy()
-    const title = screen.getByLabelText('Question title')
-    await user.type(title, own.title)
-    await user.type(screen.getByLabelText(/question details/i), own.body)
-    await user.click(save)
-    expect((await screen.findByRole('alert')).textContent).toContain('temporarily unavailable')
-    expect(title.value).toBe(own.title)
-    await user.click(save)
-    expect(await screen.findByText('Question created.')).toBeTruthy()
-    expect(JSON.parse(create.mock.calls[1][0].body)).toEqual({ title: own.title, body: own.body })
+    await user.type(screen.getByLabelText('The question in one sentence:'), 'api 404')
+    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
+    await screen.findByRole('heading', { name: 'Review the suggestion' })
+    expect(screen.getByLabelText('The question in one sentence:').value).toBe('api 404')
+    await user.click(screen.getByRole('button', { name: 'Accept suggestion' }))
+    expect(screen.getByLabelText('The question in one sentence:').value).toBe('Why does my API return a 404 error?')
+    await user.type(screen.getByLabelText('Tags - use hyphens to combine words:'), 'express api')
+    await user.click(screen.getByRole('button', { name: 'Ask the Question' }))
+    await screen.findByRole('link', { name: 'Why does my API return a 404 error?' })
+    expect(JSON.parse(create.mock.calls[0][0].body)).toEqual({
+      title: 'Why does my API return a 404 error?', body: '', format: 'html', tags: ['express', 'api'], category_id: null,
+    })
+  })
+
+  it('keeps the original when AI is unavailable and puts a long rewrite above the details', async () => {
+    const long = 'What could cause my API to return a 404 for a route that exists, and how can I check the Express router mounting, the path prefix, and the HTTP method?'
+    const improve = vi.fn()
+      .mockImplementationOnce(() => json({ message: 'down' }, 503))
+      .mockImplementation(() => json({ improvedQuestion: long }))
+    const { user } = start('/ask', { routes: { 'POST /ai/improve-question': improve } })
+    await user.type(await screen.findByLabelText('The question in one sentence:'), 'why my api returns 404')
+    await user.type(screen.getByRole('textbox', { name: 'More information for the question:' }), 'Existing details')
+    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('AI improvement is temporarily unavailable')
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await user.click(await screen.findByRole('button', { name: 'Accept suggestion' }))
+    expect(screen.getByLabelText('The question in one sentence:').value).toBe('why my api returns 404')
+    expect(screen.getByRole('textbox', { name: 'More information for the question:' }).innerHTML).toBe(`<p>${long}</p>Existing details`)
   })
 
   it('restores the unsaved draft after the same user logs in again', async () => {
-    const { user } = start('/questions/new', { routes: {
-      'POST /questions': unauthenticated,
-      'POST /auth/login': () => json({ user: member }),
-    } })
-    await screen.findByRole('heading', { name: 'New Question' })
-    await user.type(screen.getByLabelText('Question title'), own.title)
-    await user.click(screen.getByRole('button', { name: 'Save Question' }))
-    await screen.findByText('Your session ended. Log in to continue.')
-    await user.type(screen.getByLabelText('Email address'), member.email)
-    await user.type(screen.getByLabelText('Password', { exact: true }), 'a passphrase')
-    await user.click(screen.getByRole('button', { name: 'Log in' }))
-    await screen.findByRole('heading', { name: 'New Question' })
-    expect(screen.getByLabelText('Question title').value).toBe(own.title)
-  })
-
-  it('lets admins update shared questions without offering deletion', async () => {
-    const update = vi.fn(() => json({ question: shared }))
-    const { user } = start('/questions/9/edit', { account: admin, routes: { 'PATCH /questions/9': update } })
-    await screen.findByRole('heading', { name: 'Edit question' })
-    expect(screen.queryByRole('button', { name: 'Delete Question' })).toBeNull()
-    const title = screen.getByLabelText('Question title')
-    await user.type(title, ' Please help.')
-    await user.click(screen.getByRole('button', { name: 'Save Question' }))
-    expect(await screen.findByText('Question updated.')).toBeTruthy()
-    expect(JSON.parse(update.mock.calls[0][0].body).title).toBe(shared.title + ' Please help.')
-  })
-
-  it('redirects a member away from the edit route for another owner’s question', async () => {
-    start('/questions/9/edit')
-    await screen.findByRole('heading', { name: shared.title })
-    expect(screen.queryByRole('link', { name: 'Edit question' })).toBeNull()
-  })
-
-  it('requires explicit delete confirmation and supports cancel', async () => {
-    const remove = vi.fn(() => new Response(null, { status: 204 }))
-    const { user } = start('/questions/8/edit', { routes: { 'DELETE /questions/8': remove } })
-    await screen.findByRole('heading', { name: 'Edit question' })
-    const element = document.querySelector('dialog')
-    element.showModal = () => { element.open = true }
-    element.close = () => { element.open = false }
-    const trigger = screen.getByRole('button', { name: 'Delete Question', exact: true })
-    await user.click(trigger)
-    const dialog = screen.getByRole('dialog')
-    expect(remove).not.toHaveBeenCalled()
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    await user.click(trigger)
-    await user.click(within(dialog).getByRole('button', { name: 'Delete question', exact: true }))
-    expect(await screen.findByText('Question deleted.')).toBeTruthy()
-    expect(remove).toHaveBeenCalledTimes(1)
+    const session = vi.fn().mockImplementationOnce(() => json({ user: member })).mockImplementation(() => json({ user: member }))
+    const create = vi.fn().mockImplementationOnce(unauthenticated)
+    const { user } = start('/ask', { routes: { 'GET /auth/me': session, 'POST /questions': create,
+      'POST /auth/login': () => json({ user: member }) } })
+    await user.type(await screen.findByLabelText('The question in one sentence:'), 'How do I keep my draft?')
+    await user.click(screen.getByRole('button', { name: 'Ask the Question' }))
+    await screen.findByRole('heading', { name: 'Log in' })
+    const form = screen.getByRole('button', { name: 'Log In' }).closest('form')
+    await user.type(within(form).getByLabelText('Email or Username:'), 'member')
+    await user.type(within(form).getByLabelText('Password:'), 'abc')
+    await user.click(within(form).getByRole('button', { name: 'Log In' }))
+    expect((await screen.findByLabelText('The question in one sentence:')).value).toBe('How do I keep my draft?')
   })
 })
 
-describe('assistant and usage', () => {
-  it('shows pending AI feedback, recovers from rate limiting, and keeps the original', async () => {
-    let complete
-    const improve = vi.fn()
-      .mockImplementationOnce(() => new Promise((resolve) => { complete = resolve }))
-      .mockImplementationOnce(() => json({ improvedQuestion: suggestion }))
-    const { user } = start('/questions/8/edit', { routes: { [improveRoute]: improve } })
-    await screen.findByRole('heading', { name: 'Edit question' })
-    const title = screen.getByLabelText('Question title')
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    expect(screen.getByText('Preparing a wording suggestion…')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Save Question' }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: 'Improving…' }).disabled).toBe(true)
-    expect(improve).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(improve.mock.calls[0][0].body)).toEqual({ question: own.title })
-    expect(improve.mock.calls[0][0].credentials).toBe('include')
-    await act(async () => complete(json({}, 429)))
-    expect((await screen.findByRole('alert')).textContent).toContain('Too many requests')
-    expect(title.value).toBe(own.title)
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText(suggestion)).toBeTruthy()
-    expect(title.value).toBe(own.title)
-    await user.click(screen.getByRole('button', { name: 'Keep original' }))
-    expect(title.value).toBe(own.title)
-    expect(screen.queryByText(suggestion)).toBeNull()
+describe('consumption and administration', () => {
+  it('shows usage counts and a non-blocking notice at the free allowance', async () => {
+    const usage = { totalUsage: 21, freeAllowance: 20, remainingCalls: 0, limitExceeded: true, allowanceExhausted: true,
+      breakdown: [{ method: 'GET', endpoint: '/api/v1/questions', count: 21, errorCount: 0 }] }
+    const { user } = start('/', { routes: { 'GET /usage': () => json(usage) } })
+    await screen.findByText(/You have used all 20 free API calls/)
+    expect(screen.getByRole('link', { name: own.title })).toBeTruthy()
+    await user.click(screen.getByRole('link', { name: 'API usage' }))
+    await screen.findByRole('heading', { name: 'API usage' })
+    expect(screen.getAllByText('21').length).toBeGreaterThan(0)
+    expect(screen.getByText('/api/v1/questions')).toBeTruthy()
   })
 
-  it('passes the accepted suggestion to the correct editor without saving it', async () => {
-    const { user, fetch } = start('/assistant', { routes: { [improveRoute]: () => json({ improvedQuestion: suggestion }) } })
-    const select = await screen.findByLabelText('Start from an existing question')
-    await user.selectOptions(select, '8')
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    const accept = await screen.findByRole('button', { name: 'Accept suggestion' })
-    expect(screen.getByLabelText('Question title').value).toBe(own.title)
-    await user.click(accept)
-    await user.click(screen.getByRole('link', { name: 'Continue to editor' }))
-    await screen.findByRole('heading', { name: 'Edit question' })
-    expect(screen.getByLabelText('Question title').value).toBe(suggestion)
-    expect(screen.getByLabelText(/question details/i).value).toBe(own.body)
-    expect(fetch.mock.calls.filter(([, options]) => options.method !== 'GET')).toHaveLength(1)
+  it('shows administrator API statistics by user and endpoint with filtering', async () => {
+    const stats = { byUser: [{ user_id: 1, email: 'member@example.com', count: 4 }],
+      byEndpoint: [{ method: 'GET', endpoint: '/api/v1/questions', count: 3, errorCount: 0 },
+        { method: 'POST', endpoint: '/api/v1/ai/improve-question', count: 1, errorCount: 1 }] }
+    const { user } = start('/admin/usage', { account: admin, routes: { 'GET /admin/usage': () => json(stats) } })
+    await screen.findByRole('heading', { name: 'Administration center - API usage' })
+    expect(await screen.findByText('member@example.com')).toBeTruthy()
+    await user.type(screen.getByLabelText('Filter endpoints'), 'improve')
+    expect(screen.queryByText('/api/v1/questions')).toBeNull()
+    expect(screen.getByText('/api/v1/ai/improve-question')).toBeTruthy()
   })
 
-  it('shows unavailable AI without fabricating a suggestion', async () => {
-    const { user } = start('/questions/8/edit', { routes: { [improveRoute]: () => json({}, 503) } })
-    await screen.findByRole('heading', { name: 'Edit question' })
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    expect(await screen.findByText(/AI improvement is temporarily unavailable/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Accept suggestion' })).toBeNull()
-  })
-
-  it.each([
-    ['times out', () => json({}, 504), 'AI took too long to respond.'],
-    ['returns invalid output upstream', () => json({}, 502), 'AI returned an invalid or incomplete suggestion.'],
-    ['returns invalid data', () => json({ improvedQuestion: 42 }), 'The server returned an unexpected response.'],
-  ])('preserves the original when AI %s', async (_case, response, message) => {
-    const { user } = start('/questions/8/edit', { routes: { [improveRoute]: response } })
-    await screen.findByRole('heading', { name: 'Edit question' })
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    expect((await screen.findByRole('alert')).textContent).toContain(message)
-    expect(screen.getByLabelText('Question title').value).toBe(own.title)
-    expect(screen.queryByRole('button', { name: 'Accept suggestion' })).toBeNull()
-  })
-
-  it('accepts a short draft for AI and puts a long rewrite above the existing details on acceptance', async () => {
-    const longSuggestion = 'What could be the reason my React state is failing to refresh the component, and how can I check whether the state update reached the component?'
-    const { user, fetch } = start('/questions/new', { routes: {
-      [improveRoute]: () => json({ improvedQuestion: longSuggestion }),
+  it('lets administrators change a user level from the profile', async () => {
+    const profile = { id: 2, handle: 'other', role: 'user', title: 'Registered user', created_at: now, blocked: false,
+      points: 140, rank: 2, favorited: false, full_name: '', location: '', website: '', about: '',
+      stats: { qposts: 1, aposts: 1, cposts: 0, aselects: 0, aselecteds: 0, qupvotes: 0, qdownvotes: 0, aupvotes: 0,
+        adownvotes: 0, upvoteds: 0, downvoteds: 0 } }
+    const update = vi.fn(() => json({ user: { ...profile, role: 'editor' } }))
+    const { user } = start('/user/other', { account: admin, routes: {
+      'GET /users/other': () => json({ user: profile }), 'PATCH /admin/users/2': update,
     } })
-    await screen.findByRole('heading', { name: 'New Question' })
-    const improve = screen.getByRole('button', { name: 'Improve with AI' })
-    await user.click(improve)
-    expect(screen.getByText('Enter a question title.')).toBeTruthy()
-    const title = screen.getByLabelText('Question title')
-    const details = screen.getByLabelText(/question details/i)
-    await user.type(title, 'react state')
-    await user.type(details, own.body)
-    await user.click(improve)
-    await screen.findByText(longSuggestion)
-    expect(title.value).toBe('react state')
-    expect(details.value).toBe(own.body)
-    await user.click(screen.getByRole('button', { name: 'Accept suggestion' }))
-    expect(details.value).toBe(longSuggestion + '\n\n' + own.body)
-    expect(fetch.mock.calls.filter(([, options]) => options.method !== 'GET')).toHaveLength(1)
-  })
-
-  it('caps progress and shows a non-blocking notice above the threshold', async () => {
-    start('/usage', { routes: { 'GET /usage': () => json({ totalUsage: 24, freeAllowance: 20, remainingCalls: 0, limitExceeded: true, allowanceExhausted: true }) } })
-    const progress = await screen.findByRole('progressbar')
-    expect(progress.value).toBe(20)
-    expect(screen.getByText('24')).toBeTruthy()
-    expect(screen.getByText('You have used all 20 free API calls. Your service will continue, but your free allowance has been exhausted.')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'My Questions' })).toBeTruthy()
-  })
-
-  it('offers a retry on a usage failure and avoids inventing counts', async () => {
-    const usage = vi.fn().mockImplementationOnce(() => Promise.reject(new TypeError('offline')))
-      .mockImplementationOnce(() => json({}, 404))
-    const { user } = start('/usage', { routes: { 'GET /usage': usage } })
-    await screen.findByRole('alert')
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await screen.findByRole('heading', { name: 'Usage data is unavailable' })
-    await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull())
-  })
-})
-
-describe('live consumption display', () => {
-  const usageData = (totalUsage) => ({ totalUsage, freeAllowance: 20,
-    remainingCalls: Math.max(0, 20 - totalUsage), limitExceeded: totalUsage > 20,
-    allowanceExhausted: totalUsage >= 20, breakdown: [] })
-
-  it('keeps counts on the usage page and refreshes the warning after AI at 20 and 21 calls', async () => {
-    let total = 19
-    const { user } = start('/assistant', { routes: {
-      'GET /usage': () => json(usageData(total)),
-      [improveRoute]: () => { total++; return json({ improvedQuestion: suggestion }) },
-    } })
-    await screen.findByRole('heading', { name: 'AI Assistant' })
-    expect(screen.queryByText(/Eligible calls:/)).toBeNull()
-    await user.type(screen.getByLabelText('Question title'), 'why my api fails')
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    await screen.findByText('You have used all 20 free API calls. Your service will continue, but your free allowance has been exhausted.')
-    expect(screen.queryByText(/Eligible calls:/)).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Keep original' }))
-    await user.click(screen.getByRole('button', { name: 'Improve with AI' }))
-    await screen.findByRole('button', { name: 'Keep original' })
-    expect(total).toBe(21)
+    await screen.findByRole('heading', { name: 'User other' })
+    await user.selectOptions(screen.getByLabelText('User level:'), 'editor')
+    await user.click(screen.getByRole('button', { name: 'Save level' }))
+    const typeRow = screen.getByRole('rowheader', { name: 'Type:' }).closest('tr')
+    await waitFor(() => expect(within(typeRow).getByText('Editor')).toBeTruthy())
+    expect(JSON.parse(update.mock.calls[0][0].body)).toEqual({ role: 'editor' })
   })
 })

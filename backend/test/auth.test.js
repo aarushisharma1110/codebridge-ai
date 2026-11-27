@@ -23,7 +23,8 @@ for (const config of [
             async query(sql, values) {
                 if (sql.includes('INSERT INTO users')) {
                     assert.equal(values[0], email);
-                    assert.equal(values.length, 2);
+                    assert.equal(values.length, 3);
+                    assert.equal(values[2], null);
                     passwordHash = values[1];
                     assert.match(passwordHash, /^\$2[aby]\$/);
                     return { rows: [initialProfile] };

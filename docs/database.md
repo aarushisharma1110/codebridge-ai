@@ -129,7 +129,16 @@ docker compose logs --tail=100 postgres
 
 ## Updating tables or starting over
 
-Docker reads `backend/db/schema.sql` only when it first creates the database. Editing this file or restarting Docker will not update existing tables. To keep your data, run the SQL commands needed to update the tables in the database terminal from step 4.
+Docker reads `backend/db/schema.sql` only when it first creates the database. Restarting Docker will not update existing tables. The schema is written to be re-run safely: it only creates missing tables, columns, indexes, functions and views, backfills usernames, and never drops rows. To upgrade an existing Milestone 1 database to the Question2Answer schema while keeping your data, back it up and apply the file:
+
+```sh
+docker compose exec -T postgres pg_dump -U codebridge -d codebridge_ai --format=custom > codebridge-backup.dump
+docker compose exec -T postgres psql -U codebridge -d codebridge_ai -v ON_ERROR_STOP=1 < backend/db/schema.sql
+```
+
+Existing accounts receive a username derived from the email local part (with the account ID appended when two would collide), existing questions keep their IDs, owners and hidden state, and every account starts with Q2A's base of 100 points plus points for its existing questions.
+
+To add optional demonstration categories, questions, answers, comments and votes to a disposable database, run `npm --prefix backend run seed:demo -- --content`. It does nothing when categories already exist.
 
 To start over and create the tables again, run these commands from the main project folder. **This permanently deletes all your local database data.**
 

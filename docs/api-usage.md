@@ -2,9 +2,9 @@
 
 ## Counting policy
 
-Only authenticated requests that reach an explicitly tracked question or AI route count. This includes listing/detail reads, create/edit/delete, hidden-list reads, hide/reshow, and AI improvement. Each request inserts one row, including validation errors, authorization denials after authentication, missing resources, inference failures and server errors. The final HTTP status is saved.
+Only authenticated requests that reach an explicitly tracked functional route count. This includes question listing/detail/search reads, create/edit/delete, hidden-list reads, hide/reshow, voting, flagging, favorites, closing, best-answer selection, answers, comments, activity, tags, categories, user directory and profile reads, administrator moderation, category and option writes, and AI improvement. Each request inserts one row, including validation errors, authorization denials after authentication, missing resources, inference failures and server errors. The final HTTP status is saved.
 
-Registration, login, logout, session lookup, documentation, preflight OPTIONS, HEAD, health checks, database diagnostics, user usage reads, and administrator dashboard/directory/usage reads do not count. Unknown routes and unsupported methods do not count. Origin rejection and JSON parsing/size failures happen before tracked route authentication and do not count. Unauthenticated requests never count.
+Registration, login, logout, session lookup, profile and password changes under `/auth`, the public `GET /site` layout information, documentation, preflight OPTIONS, HEAD, health checks, database diagnostics, user usage reads, and administrator dashboard/directory/usage/statistics reads do not count. The Q2A interface makes several counted reads per page (for example the page list plus the sidebar categories), so the 20-call notice appears sooner than in Milestone 1; it remains a non-blocking warning. Unknown routes and unsupported methods do not count. Origin rejection and JSON parsing/size failures happen before tracked route authentication and do not count. Unauthenticated requests never count.
 
 ## Storage and response ordering
 

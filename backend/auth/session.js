@@ -45,7 +45,7 @@ function createSessionAuth({ pool, secret, secure, sameSite = 'lax' }) {
         }
 
         const result = await pool.query(
-            'SELECT id, email, role, created_at FROM users WHERE id = $1',
+            'SELECT id, handle, email, role, blocked, created_at, full_name, location, website, about FROM users WHERE id = $1',
             [userId]
         );
         if (!result.rows[0]) return res.status(401).json({ message: messages.api.invalidSession });

@@ -65,7 +65,8 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, pending, error, expired, signedOut, retry, login, logout, interruptedDraft }}>
+  return <AuthContext.Provider value={{ user, pending, error, expired, signedOut, retry, login, logout, interruptedDraft,
+    updateUser: (changes) => setUser((current) => current && { ...current, ...changes }) }}>
     {children}
   </AuthContext.Provider>
 }

@@ -6,6 +6,8 @@ const createAuthRouter = require('./routes/auth');
 const createAdminRouter = require('./routes/admin');
 const createQuestionsRouter = require('./routes/questions');
 const createAiRouter = require('./routes/ai');
+const createPostRouter = require('./routes/posts');
+const { createBrowseRouter, createSiteRouter } = require('./routes/browse');
 const messages = require('../lang/message/en/messages.json');
 const createApiUsageTracker = require('./middleware/apiUsage');
 
@@ -44,7 +46,9 @@ function createApp({
     }));
     app.use(cookieParser());
 
-    app.use(['/api/v1/usage', '/api/v1/auth', '/api/v1/admin', '/api/v1/questions', '/api/v1/ai'], (req, res, next) => {
+    app.use(['/api/v1/usage', '/api/v1/auth', '/api/v1/admin', '/api/v1/questions', '/api/v1/ai',
+        '/api/v1/answers', '/api/v1/comments', '/api/v1/activity', '/api/v1/tags', '/api/v1/categories',
+        '/api/v1/users', '/api/v1/favorites', '/api/v1/site'], (req, res, next) => {
         res.set('Cache-Control', 'no-store');
 
         // Browsers control Origin. Require it for every write, including login and logout.
@@ -59,8 +63,12 @@ function createApp({
     app.use('/doc', require('./routes/documentation')(enableDatabaseDiagnostic));
 
     app.use('/api/v1/auth', createAuthRouter(pool, session));
-    app.use('/api/v1/admin', createAdminRouter(pool, session.requireAuth));
+    app.use('/api/v1/admin', createAdminRouter(pool, session.requireAuth, trackApiUsage));
     app.use('/api/v1/questions', createQuestionsRouter(pool, session.requireAuth, trackApiUsage));
+    app.use('/api/v1/answers', createPostRouter('answer', pool, session.requireAuth, trackApiUsage));
+    app.use('/api/v1/comments', createPostRouter('comment', pool, session.requireAuth, trackApiUsage));
+    app.use('/api/v1/site', createSiteRouter(pool));
+    app.use('/api/v1', createBrowseRouter(pool, session.requireAuth, trackApiUsage));
     app.use('/api/v1/ai', createAiRouter(session.requireAuth, ai, trackApiUsage));
     app.use('/api/v1/usage', require('./routes/usage')(pool, session.requireAuth));
 

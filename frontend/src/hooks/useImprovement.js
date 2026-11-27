@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { improveQuestion } from '../services/api'
 import { MAX_TITLE_LENGTH, MIN_TITLE_LENGTH } from '../components/QuestionFields'
+import { textToHtml } from '../components/RichEditor'
 import messages from '../../../lang/message/en/messages.json'
 
 export function useImprovement(draft) {
@@ -28,7 +29,7 @@ export function useImprovement(draft) {
         !/[\r\n]/.test(suggestion)
       const revisedDraft = fitsTitle
         ? { ...draft, title: suggestion }
-        : { ...draft, body: draft.body ? `${suggestion}\n\n${draft.body}` : suggestion }
+        : { ...draft, body: textToHtml(suggestion) + (draft.body || '') }
       setResult({ original, suggestion, fitsTitle, revisedDraft })
     } catch (failure) {
       setResult({ error: failure.message })

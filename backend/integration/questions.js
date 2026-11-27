@@ -380,7 +380,8 @@ test('auth edge cases use real bcrypt storage, normalized unique email and safe 
     assert.equal(registered.status, 201);
     assert.equal(registered.data.user.email, 'security-edges@example.test');
     assert.equal(registered.data.user.role, 'user');
-    assert.deepEqual(Object.keys(registered.data.user).sort(), ['created_at', 'email', 'id', 'role']);
+    assert.deepEqual(Object.keys(registered.data.user).sort(), ['created_at', 'email', 'handle', 'id', 'role']);
+    assert.equal(registered.data.user.handle, 'security-edges');
     const { rows: [stored] } = await pool.query('SELECT * FROM users WHERE id = $1', [registered.data.user.id]);
     assert.equal(stored.role, 'user');
     assert.notEqual(stored.password_hash, credentials.password);
@@ -423,15 +424,17 @@ test('auth edge cases use real bcrypt storage, normalized unique email and safe 
     assert.ok(responses.every(data => JSON.stringify(data) === JSON.stringify(responses[0])));
     const accepted = await request('/auth/login', { method: 'POST', body: credentials });
     assert.equal(accepted.status, 200);
-    assert.deepEqual(Object.keys(accepted.data.user).sort(), ['created_at', 'email', 'id', 'role']);
+    assert.deepEqual(Object.keys(accepted.data.user).sort(), ['created_at', 'email', 'handle', 'id', 'role']);
     const cookie = accepted.headers.get('set-cookie').split(';', 1)[0];
     const me = await request(`/auth/me?user_id=${admin.id}&id=${admin.id}`, { cookie });
     assert.equal(me.data.user.id, registered.data.user.id);
-    // There is no account-update API: users cannot escalate through invented routes.
-    for (const target of ['/auth/me', `/users/${registered.data.user.id}`, `/admin/users/${registered.data.user.id}`]) {
-        const denied = await request(target, { method: 'PATCH', cookie, body: { role: 'admin' } });
-        assert.equal(denied.status, 404);
-    }
+    // Profile updates ignore role, and only administrators may change levels.
+    assert.equal((await request('/auth/me', { method: 'PATCH', cookie, body: { role: 'admin' } })).status, 400);
+    const profile = await request('/auth/me', { method: 'PATCH', cookie, body: { role: 'admin', location: 'Burnaby' } });
+    assert.equal(profile.status, 200);
+    assert.equal(profile.data.user.role, 'user');
+    assert.equal((await request(`/users/${registered.data.user.id}`, { method: 'PATCH', cookie, body: { role: 'admin' } })).status, 404);
+    assert.equal((await request(`/admin/users/${registered.data.user.id}`, { method: 'PATCH', cookie, body: { role: 'admin' } })).status, 403);
     assert.equal((await pool.query('SELECT role FROM users WHERE id = $1', [registered.data.user.id])).rows[0].role, 'user');
 });
 

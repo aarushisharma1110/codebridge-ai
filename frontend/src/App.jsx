@@ -1,32 +1,39 @@
 import { useEffect } from 'react'
-import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { Brand, Layout, Profile } from './components/Layout'
-import { EmptyState, Notice } from './components/ui'
-import { AuthPage } from './pages/AuthPage'
-import { QuestionsPage, QuestionRoute } from './pages/Questions'
+import { Layout } from './components/Layout'
+import { Heading, Notice } from './components/ui'
+import { AuthPage } from './pages/AuthPages'
+import { ActivityPage, CategoriesPage, QuestionsPage, SearchPage, TagPage, TagsPage, UnansweredPage, UsersPage } from './pages/Lists'
+import { QuestionPage } from './pages/QuestionPage'
+import { AskPage } from './pages/AskPage'
+import { AccountPage, FavoritesPage, UserPage } from './pages/UserPages'
+import {
+  AdminCategories, AdminFlagged, AdminGate, AdminGeneral, AdminHidden, AdminStats, AdminUsage, AdminUsers, UsagePage
+} from './pages/AdminPages'
 import { AssistantPage } from './pages/Assistant'
-import { AdminPage, UsagePage } from './pages/Analytics'
 import messages from '../../lang/message/en/messages.json'
+
+const m = messages.q2a
+const safeDestination = (from) => typeof from === 'string' && /^\/(?!\/)/.test(from) ? from : '/'
 
 function Gate({ guest = false }) {
   const { user, signedOut } = useAuth()
   const location = useLocation()
-  if (guest) {
-    const from = location.state?.from
-    const destination = typeof from === 'string' && /^\/(?!\/)/.test(from) ? from : '/questions'
-    return user ? <Navigate to={destination} replace /> : <Outlet />
-  }
+  if (guest) return user ? <Navigate to={safeDestination(location.state?.from)} replace /> : <Outlet />
   return user ? <Outlet /> : <Navigate to="/login" replace
-    state={signedOut ? null : { from: location.pathname }} />
+    state={signedOut ? null : { from: location.pathname + location.search }} />
 }
 
-function AdminGate() {
-  return useAuth().user.role === 'admin' ? <Outlet /> :
-    <EmptyState title={messages.common.adminRequired}
-      action={<Link className="button secondary" to="/questions">{messages.common.backToQuestions}</Link>}>
-      {messages.app.adminOnly}
-    </EmptyState>
+function NotFound() {
+  return <><Heading>{m.headings.notFound}</Heading><Notice kind="warning">{m.misc.notFoundText}</Notice></>
+}
+
+// /questions/<category> lists a category; numeric segments are legacy question links.
+function QuestionsOrLegacy() {
+  const { category } = useParams()
+  if (/^[1-9]\d{0,9}$/.test(category)) return <Navigate to={`/${category}`} replace />
+  return <QuestionsPage />
 }
 
 function AppRoutes() {
@@ -35,41 +42,61 @@ function AppRoutes() {
 
   useEffect(() => {
     window.scrollTo(0, 0)
-    document.querySelector('main')?.focus({ preventScroll: true })
+    document.getElementById('page-heading')?.focus({ preventScroll: true })
   }, [pathname, pending])
 
-  if (pending || error) return <main className="session-shell" tabIndex={-1}>
-    <Brand />
-    {pending ? <p className="loading" role="status"><span className="spinner" /> {messages.app.checkingSession}</p>
-      : <Notice kind="error">
-        <div>{error}</div>
-        <button className="button secondary small" onClick={retry}>{messages.common.retry}</button>
-      </Notice>}
+  if (pending || error) return <main className="qa-session-shell" tabIndex={-1}>
+    {pending ? <div className="qa-waiting" role="status">{messages.app.checkingSession}</div>
+      : <Notice kind="error">{error} <button className="qa-retry" onClick={retry}>{messages.common.retry}</button></Notice>}
   </main>
 
   return <Routes>
-    <Route path="/" element={<Navigate to="/questions" replace />} />
-    <Route element={<Gate guest />}>
-      <Route path="/login" element={<AuthPage key="login" />} />
-      <Route path="/register" element={<AuthPage key="register" registering />} />
-    </Route>
-    <Route element={<Gate />}>
-      <Route element={<Layout />}>
+    <Route element={<Layout />}>
+      <Route element={<Gate guest />}>
+        <Route path="/login" element={<AuthPage key="login" />} />
+        <Route path="/register" element={<AuthPage key="register" registering />} />
+      </Route>
+      <Route element={<Gate />}>
+        <Route index element={<ActivityPage />} />
+        <Route path="/activity" element={<Navigate to="/" replace />} />
         <Route path="/questions" element={<QuestionsPage />} />
-        <Route path="/questions/new" element={<QuestionRoute key="new" mode="create" />} />
-        <Route path="/questions/:id" element={<QuestionRoute key="view" mode="view" />} />
-        <Route path="/questions/:id/edit" element={<QuestionRoute key="edit" mode="edit" />} />
-        <Route path="/assistant" element={<AssistantPage />} />
+        <Route path="/questions/new" element={<Navigate to="/ask" replace />} />
+        <Route path="/questions/:id/edit" element={<LegacyEdit />} />
+        <Route path="/questions/:category" element={<QuestionsOrLegacy />} />
+        <Route path="/unanswered" element={<UnansweredPage />} />
+        <Route path="/tags" element={<TagsPage />} />
+        <Route path="/tag/:tag" element={<TagPage />} />
+        <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/users/:sort" element={<UsersPage />} />
+        <Route path="/user/:handle" element={<UserPage />} />
+        <Route path="/user/:handle/activity" element={<UserPage tab="activity" />} />
+        <Route path="/user/:handle/questions" element={<UserPage tab="questions" />} />
+        <Route path="/user/:handle/answers" element={<UserPage tab="answers" />} />
+        <Route path="/ask" element={<AskPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/profile" element={<Navigate to="/account" replace />} />
+        <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/usage" element={<UsagePage />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route element={<AdminGate />}>
-          <Route path="/admin" element={<AdminPage />} />
-        </Route>
-        <Route path="*" element={<EmptyState title={messages.app.notFound}
-          action={<Link className="button secondary" to="/questions">{messages.common.backToQuestions}</Link>} />} />
+        <Route path="/assistant" element={<AssistantPage />} />
+        <Route path="/admin" element={<AdminGate><AdminGeneral /></AdminGate>} />
+        <Route path="/admin/users" element={<AdminGate><AdminUsers /></AdminGate>} />
+        <Route path="/admin/categories" element={<AdminGate><AdminCategories /></AdminGate>} />
+        <Route path="/admin/stats" element={<AdminGate><AdminStats /></AdminGate>} />
+        <Route path="/admin/usage" element={<AdminGate><AdminUsage /></AdminGate>} />
+        <Route path="/admin/flagged" element={<AdminGate level="moderator"><AdminFlagged /></AdminGate>} />
+        <Route path="/admin/hidden" element={<AdminGate level="moderator"><AdminHidden /></AdminGate>} />
+        <Route path="/:id/:slug?" element={<QuestionPage />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Route>
   </Routes>
+}
+
+function LegacyEdit() {
+  const { id } = useParams()
+  return <Navigate to={`/${id}`} replace />
 }
 
 export default function App() {

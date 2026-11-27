@@ -6,7 +6,7 @@ The canonical file is `backend/docs/openapi.json`, included by the backend Docke
 
 ## Coverage
 
-An operation is an explicit HTTP method + API path. There are **19 development operations across 16 distinct paths**, and **18 production operations across 15 paths** when the database diagnostic is disabled. Implicit Express HEAD handling and OPTIONS preflight are described as infrastructure, not counted as separate application operations. Documentation assets are not application API operations.
+An operation is an explicit HTTP method + API path. There are **70 development operations across 56 distinct paths**, and **69 production operations across 55 paths** when the database diagnostic is disabled. Implicit Express HEAD handling and OPTIONS preflight are described as infrastructure, not counted as separate application operations. Documentation assets are not application API operations.
 
 | Group | Operations relative to /api/v1 |
 | --- | --- |
@@ -41,7 +41,7 @@ New focused checks:
 node --test backend/test/documentation.test.js
 ```
 
-The tests validate the OpenAPI document, compare its 19 operations against instantiated backend routers, check path parameters and authorization declarations, verify public docs/assets/configuration in both development and production modes through socket-free HTTP injection, and compare both consumption response examples against the actual Express route response transformations using controlled database fixtures. The fixture-based comparison verifies the JSON contract, not production statistics or PostgreSQL aggregation correctness; those were covered separately earlier. No unrelated authentication/security suites are repeated.
+The tests validate the OpenAPI document, compare its 70 operations against instantiated backend routers, check path parameters and authorization declarations, verify public docs/assets/configuration in both development and production modes through socket-free HTTP injection, and compare both consumption response examples against the actual Express route response transformations using controlled database fixtures. The fixture-based comparison verifies the JSON contract, not production statistics or PostgreSQL aggregation correctness; those were covered separately earlier. No unrelated authentication/security suites are repeated.
 
 A temporary backend preview on port 3002 served the new docs. Real-browser verification observed Swagger UI with all operation groups, schema rendering and examples; executing GET /api/v1/health from Swagger returned 200 with the exact documented JSON. The preview used a database stub and no real-account writes. It does not verify authenticated browser-cookie transport or model inference. The preview is stopped after verification.
 
@@ -61,7 +61,7 @@ The deployed https://codebridge-api.duckdns.org/doc/ was checked in a real brows
 
 1. Restart the local backend and open http://localhost:3000/doc/. Confirm the specification and assets load. The temporary preview was a separate process and did not restart the user's backend.
 2. After separately authorized deployment, install locked dependencies, restart the backend and ensure the active proxy forwards `/doc` and `/doc/*` without stripping the prefix. The supplied Compose proxy is updated; the external PM2 host Caddy configuration must be checked separately.
-3. Open https://codebridge-api.duckdns.org/doc/ and its openapi.json. Confirm 18 production operations, no enabled `/db-test`, correct server selection and all examples.
+3. Open https://codebridge-api.duckdns.org/doc/ and its openapi.json. Confirm 69 production operations, no enabled `/db-test`, correct server selection and all examples.
 4. In the same target browser, log in through the deployed frontend and check a protected read through Swagger with the existing cookie. Expect API-origin writes to remain denied by the existing Origin policy. Document any third-party-cookie restriction rather than weakening security settings.
 
 **Assessment:** Section 8's local documentation coverage and serving requirements are implemented and verified. Interactive authenticated Swagger reads remain unverified; writes from API-origin docs have a documented existing security limitation. Section 8 as a hosted submission requirement is not complete until deployed `/doc/` is available and checked.

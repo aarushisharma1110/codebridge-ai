@@ -48,6 +48,10 @@ async function main() {
         const client = await pool.connect();
         try {
             await seedDemoAccounts(client);
+            if (process.argv.includes('--content')) {
+                const added = await require('./seed-content')(client);
+                console.log(added ? 'Demo Q&A content is ready' : 'Categories already exist; demo Q&A content was not added');
+            }
         } finally {
             client.release();
         }

@@ -1,13 +1,13 @@
 # CodeBridge AI
 
-CodeBridge AI is a BCIT COMP 4537 project that adapts Question2Answer (Q2A) question management to an Express REST API and a separate React frontend. PostgreSQL stores accounts and questions. A private llama.cpp service runs Qwen2.5-3B-Instruct to suggest clearer question wording.
+CodeBridge AI is a BCIT COMP 4537 project that reimplements Question2Answer (Q2A) — questions, answers, comments, voting, best answers, categories, tags, search, user profiles, reputation, moderation and administration — as an Express REST API and a separate React frontend styled after Q2A's SnowFlat theme. PostgreSQL stores all data. A private llama.cpp service runs Qwen2.5-3B-Instruct to suggest clearer question wording, the project's addition to Q2A.
 
 ## Tech Stack
 
 | Component | Technology |
 | --- | --- |
 | Backend | Node.js, Express.js |
-| Frontend | React, Vite, Tailwind CSS, React Router |
+| Frontend | React, Vite, React Router, plain CSS (Q2A SnowFlat layout) |
 | Database | PostgreSQL 17.6, Docker Compose |
 | Authentication | bcrypt, JWT in an HttpOnly cookie |
 | AI | Qwen2.5-3B-Instruct GGUF, llama.cpp |
@@ -55,11 +55,14 @@ Open [CodeBridge AI locally](http://localhost:5173). The frontend uses `http://l
 
 Start `llama-server` in a third terminal to test AI improvement. [Download Qwen and start llama.cpp](docs/frontend.md#local-qwen-inference)
 
-## Milestone 1 instructor smoke test
+## Instructor smoke test
 
-1. **Authentication.** Register with a disposable email and a password of at least eight characters, then log in. Reload **My Questions** and confirm the session persists. Use **Log out** from **Profile** and confirm that opening `/questions` takes you to login. Log back in for the remaining checks. [Optional course demo accounts](docs/authentication.md#seed-the-course-demo-accounts)
-2. **Question management.** Use **New Question** to create a question with the title `why my api returns 404` and save it. Find it in **My Questions**, open it, edit the details, and save. Reopen the question to confirm the edit persisted.
-3. **AI improvement.** Edit the saved question and select **Improve with AI**. Confirm the comparison shows a rewrite and the draft stays the same until you select **Accept suggestion**. Review the draft, select **Save Question**, and reopen it to check that the accepted change persisted. Use **Delete Question** in the editor and confirm that the question disappears from the list. [Inference setup and behavior](docs/frontend.md#local-qwen-inference)
+Optionally load demonstration content into a disposable database first: `npm --prefix backend run seed:demo -- --content` (demo accounts `john@john.com` / `123` and `admin@admin.com` / `111`, plus categories, questions, answers and votes).
+
+1. **Authentication.** Register with a username, a disposable email and a password of at least eight characters, then log in with either the email or the username. Reload and confirm the session persists. Use **Logout** from the account menu at the top right and confirm that opening `/questions` takes you to login.
+2. **Asking with AI.** Select **Ask a Question**, enter `why my api returns 404`, select **Improve with AI**, review the comparison and select **Accept suggestion**. Add tags, choose a category if any exist and select **Ask the Question**.
+3. **Q2A workflow.** From a second account, vote on the question, answer it and add a comment. As the asker, select the green check to choose the best answer, and check that both users' points changed on **Users**. Try **Questions** sorting, **Unanswered**, **Tags**, **Categories** and the sidebar search.
+4. **Moderation.** Flag a post from another account. As an administrator, open **Admin > Flagged**, clear or hide it, reshow it from **Admin > Hidden**, change a user's level from their profile and review **Admin > API usage**.
 
 ## Milestone 1 submission archives
 
@@ -89,14 +92,13 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-Use a disposable PostgreSQL database for `test:postgres`. It verifies question CRUD, visibility rules, and administrator directory access. See the [test setup](docs/authentication.md#run-tests) for connection and isolation details.
+Use a disposable PostgreSQL database for `test:postgres`. It verifies question CRUD, visibility rules, administrator directory access, schema re-application, and the Q2A answers, comments, votes, points, tags, categories, search, moderation, favorites, profiles and administration endpoints. See the [test setup](docs/authentication.md#run-tests) for connection and isolation details.
 
 ## Features
 
-- Register, log in, and view, create, edit, or delete questions according to account permissions.
-- Search visible questions and filter by ownership. Owners can hide their own questions. Administrators can view, reshow, and permanently delete hidden questions.
-- View account counts and the registered-user directory as an administrator.
-- Review Qwen-backed wording suggestions in the editor and AI Assistant.
+- The Q2A feature set: questions, answers, comments, voting, best answer selection, categories, tags, search, Q2A sorting and unanswered filters, activity, user profiles, Q2A points and levels, favorites, flags, closing, hiding, blocking and an administration center. See the [feature comparison](docs/migration-notes.md).
+- Q2A URLs and the SnowFlat layout, including its responsive menu and sidebar. See [frontend routes](docs/frontend.md#routes-and-permissions).
+- Review Qwen-backed wording suggestions on the Ask and Edit forms and in the AI assistant.
 - View persisted API consumption, remaining free calls and a non-blocking warning at 20 calls; administrators can view usage by user and endpoint. See [consumption policy and verification](docs/api-usage.md).
 - Compare current behavior with Q2A in the [migration notes](docs/migration-notes.md) and [historical source analysis](docs/q2a-analysis.md).
 

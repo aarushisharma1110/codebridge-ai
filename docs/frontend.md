@@ -12,21 +12,30 @@ Vite uses `http://localhost:3000/api/v1` by default in development. Set `VITE_AP
 
 ## Routes and permissions
 
-| Page | Path | Behavior |
+The interface reproduces the Question2Answer 1.8 SnowFlat theme: the dark top bar with icon navigation, the grey sub-navigation band, the blue page heading, white list and form panels, the 74.5% / 25% main and sidebar split, and SnowFlat's colours, Ubuntu typography and breakpoints (980, 800 and 768 px). Below 980 px the main navigation becomes a menu and the sidebar slides in from the right, as in SnowFlat. URLs follow Q2A.
+
+| Q2A page | Path | Behavior |
 | --- | --- | --- |
-| Login | `/login` | Sign in and return to the requested protected page, or open My Questions by default. |
-| Registration | `/register` | Create an account and continue to login. |
-| My Questions | `/questions` | See the signed-in email, search visible questions, and filter to your own. Administrators can also search and open hidden questions. |
-| Question details | `/questions/:id` | Owners can hide their visible questions. Administrators can hide any visible question and reshow or permanently delete hidden questions. |
-| Question editor | `/questions/new`, `/questions/:id/edit` | Create or update a question and review AI suggestions. Owners can confirm deletion of their visible questions here. |
-| AI Assistant | `/assistant` | Start from a new or visible question and send an accepted suggestion to the editor for review. |
-| API Usage | `/usage` | Show eligible calls, progress, notices, and a breakdown when available. |
-| Administration | `/admin` | Administrators can see account totals and filter the registered-user directory by email and role. Usage values show as unavailable until the backend supplies them. |
-| Profile | `/profile` | Show account email, role, creation date, and logout. |
+| All activity (home) | `/` | Recent questions with their latest event: asked, answered, commented or edited. |
+| Questions | `/questions`, `/questions/<category-slug>` | Sub-navigation for Recent, Hot!, Most votes, Most answers and Most views. A category path includes its subcategories. |
+| Unanswered | `/unanswered`, `?by=selected`, `?by=upvotes` | No answer, no selected answer, or no upvoted answer. Closed questions are excluded. |
+| Tags | `/tags`, `/tag/<tag>` | Most popular tags with counts; a tag page lists its questions and can be added to favorites. |
+| Categories | `/categories` | Browse categories and subcategories with question counts. |
+| Users | `/users`, `/users/newest`, `/users/special`, `/users/blocked` | Top scoring users with points. Blocked users is for moderators and administrators. |
+| User profile | `/user/<handle>` and `/activity`, `/questions`, `/answers` | Member for, level, profile fields, score and rank, activity counts and votes. Administrators can change the level or block the user here. |
+| Ask a Question | `/ask` | Title, category, details and tags, with **Improve with AI** and Q2A's similar-question check. |
+| Question | `/<id>/<slug>` | Voting, favorite star, answers, comments, best answer, edit (with AI), flag, close/reopen, hide/reshow and delete according to the user's level. Old `/questions/<id>` links redirect here. |
+| Search | `/search?q=` | Words matched against titles, details and tags. |
+| My account | `/account` | Username, name, location, website, about and password. |
+| My favorites | `/favorites` | Favorite questions, users and tags. |
+| API usage | `/usage` | The account's counted calls, the 20-call notice and a per-endpoint breakdown. |
+| AI assistant | `/assistant` | Standalone AI improvement whose accepted draft continues to the Ask page. |
+| Admin | `/admin`, `/admin/users`, `/admin/categories`, `/admin/stats`, `/admin/flagged`, `/admin/hidden`, `/admin/usage` | General options, users, categories and statistics for administrators; flagged and hidden posts for moderators and administrators; API consumption by user and endpoint. |
+| Log in / Register | `/login`, `/register` | Log in with an email or username. Registration asks for a username, email and password. The top bar also has Q2A's login drop-down. |
 
-All signed-in accounts can read visible questions. Owners and administrators can edit visible questions. Hidden questions are omitted from the visible list and regular users receive `403` when opening one, including their own. After hiding a question, a regular owner returns to the visible list. Administrators can stay on the hidden detail page and must reshow the question before editing. A hidden edit URL takes an administrator to the detail view. Express enforces the permissions independently of the frontend.
+User levels follow Q2A: registered user, expert, editor, moderator and administrator. Editors and above can edit, hide and reshow any post and select best answers; moderators and administrators can permanently delete hidden posts; only administrators can use the admin pages for options, users, categories and statistics. Express enforces every permission independently of the frontend.
 
-The session provider reads `GET /auth/me` at startup and again after login to verify that the browser can send the session cookie. If the post-login check returns `401`, the login screen shows a session error and stays open. Browser requests include credentials, and JavaScript keeps the user profile in memory. A `401` from a protected application request ends the local session. An interrupted draft stays in memory and can be restored when the same account signs back in without reloading the app. A startup network error offers a retry.
+The session provider reads `GET /auth/me` at startup and again after login to verify that the browser can send the session cookie. A `401` from a protected application request ends the local session. An interrupted Ask draft stays in memory and is restored when the same account signs back in without reloading the app.
 
 ## Frontend structure
 
@@ -34,14 +43,19 @@ The session provider reads `GET /auth/me` at startup and again after login to ve
 frontend/
 ├── public/                  Brand icon and Netlify SPA rewrite
 ├── src/
-│   ├── components/          Navigation, feedback, question fields, and AI comparison
+│   ├── components/
+│   │   ├── Layout.jsx       Q2A top bar, sub-navigation, sidebar widgets and footer
+│   │   ├── q2a.jsx          Vote box, answer count, tags, meta line and question list
+│   │   ├── ui.jsx           Notices, pagination, relative times, post content
+│   │   ├── QuestionFields.jsx  Ask/edit form fields and validation
+│   │   └── Improvement.jsx  AI suggestion comparison
 │   ├── context/             Cookie-backed session state
-│   ├── hooks/               Resource loading and AI interaction
-│   ├── pages/               Screens and question moderation tests
-│   ├── services/api.js      Fetch, errors, and API contracts
-│   ├── App.jsx              Routes and authorization guards
+│   ├── hooks/               Resource loading, drafts and AI interaction
+│   ├── pages/               Lists, question page, ask, users, account, admin and auth pages
+│   ├── services/api.js      Fetch, errors and API contracts
+│   ├── App.jsx              Q2A routes and authorization guards
 │   ├── App.test.jsx         Interaction tests with mocked HTTP
-│   ├── index.css            Responsive design and Tailwind CSS
+│   ├── index.css            SnowFlat-style theme (plain CSS)
 │   └── main.jsx             React entry point
 ├── index.html
 ├── package.json
@@ -49,31 +63,9 @@ frontend/
 └── vite.config.js
 ```
 
-## Implemented Express endpoints
+## Express endpoints
 
-Paths below are relative to `/api/v1`.
-
-| Endpoint | Request and successful response |
-| --- | --- |
-| `POST /auth/register` | `{ email, password }` → 201 with `{ user }` |
-| `POST /auth/login` | `{ email, password }` → 200 with `{ user }` and a cookie |
-| `GET /auth/me` | 200 with `{ user }` |
-| `POST /auth/logout` | 204 and cookie expiration |
-| `GET /questions` | 200 with `{ questions }` containing visible questions only |
-| `GET /questions/hidden` | Administrator only. 200 with `{ questions }` containing hidden questions only |
-| `GET /questions/:id` | 200 with `{ question }`. Hidden questions require an administrator |
-| `POST /questions` | `{ title, body }` → 201 with `{ question }` |
-| `PATCH /questions/:id` | An owner or administrator can edit a visible question. `{ title, body }` → 200 with `{ question }`. With a valid body, a hidden question returns 409 for an administrator and 403 for a regular user |
-| `POST /questions/:id/hide` | An owner or administrator can hide a visible question. 204 for a regular owner, or 200 with `{ question }` for an administrator |
-| `POST /questions/:id/reshow` | Administrator only. 200 with `{ question }` after reshowing a hidden question |
-| `DELETE /questions/:id` | 204 for the owner of a visible question or an administrator deleting a hidden question |
-| `GET /admin/dashboard` | Administrator only. 200 with `{ users, admins }` containing counts by role |
-| `GET /admin/users` | Administrator only. 200 with `{ users: [{ id, email, role, created_at }] }` |
-| `POST /ai/improve-question` | `{ question }` → 200 with `{ improvedQuestion }` |
-
-The editor and API validate trimmed titles at 12–120 UTF-16 code units and trimmed details at 0–12,000. The API also limits encoded JSON to 16 KB. A draft with many multibyte or escaped characters can reach the request limit before the editor's length limit. The editor preserves the draft and displays an error.
-
-The Milestone 1 directory response contains account IDs, emails, roles, and creation timestamps. The frontend can show an unavailable directory when an older API returns `404`, `405`, or `501`. A matching Milestone 1 deployment serves the directory on `GET /admin/users`.
+All 70 operations are described with request and response examples in Swagger UI at `/doc/` (see [API documentation](api-documentation.md)). Question and answer details use a CKEditor-style rich text editor and are sent as sanitized HTML with `format: 'html'`; comments stay plain text. The editor and API validate trimmed titles at 12–120 UTF-16 code units, details at 0–12,000, answers and comments at 12–12,000 and up to 5 tags. The API limits encoded JSON to 16 KB.
 
 ## Local Qwen inference
 

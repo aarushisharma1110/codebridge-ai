@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test",
     "start": "node server.js",
-    "test:postgres": "node --test integration/questions.js",
+    "test:postgres": "node --test integration/questions.js integration/q2a.js",
     "seed:demo": "node scripts/seed-demo.js"
   },
   "keywords": [],
@@ -20,6 +20,7 @@
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.1",
+    "sanitize-html": "^2.13.1",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
